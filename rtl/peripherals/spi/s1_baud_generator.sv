@@ -34,3 +34,4 @@ module baud_generator (
     end
 
 endmodule
+

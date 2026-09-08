@@ -28,3 +28,4 @@ module spi_counter (
     assign done = (count == 4'd8);
 
 endmodule
+

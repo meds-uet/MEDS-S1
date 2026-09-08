@@ -260,3 +260,4 @@ module spi_fsm (
     end
 
 endmodule
+

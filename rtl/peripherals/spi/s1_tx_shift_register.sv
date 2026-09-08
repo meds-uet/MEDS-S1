@@ -33,3 +33,4 @@ module tx_shift_register #(
     assign mosi = data[WIDTH-1];
 
 endmodule
+

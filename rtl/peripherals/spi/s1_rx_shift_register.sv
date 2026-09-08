@@ -26,3 +26,4 @@ module rx_shift_register #(
     end
 
 endmodule
+

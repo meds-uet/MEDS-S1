@@ -30,3 +30,4 @@ module control_register (
     end
 
 endmodule
+

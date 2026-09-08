@@ -21,3 +21,4 @@ module divider_register (
     end
 
 endmodule
+
