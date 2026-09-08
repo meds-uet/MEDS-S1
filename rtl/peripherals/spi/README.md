@@ -25,35 +25,7 @@ these are currently wired into `spi_master`.
  
 ---
  
-## Architecture
- 
-```
-                 ┌─────────────────────────────────────────────────────┐
-                 │                     spi_master                      │
-                 │                                                     │
-  divider ──────►│  baud_generator ──tick──► sclk_generator ──sclk────►│── sclk (pin)
-                 │       ▲                    │   sck_rising/falling   │
-  enable,start ─►│       └── enable = busy    ▼                        │
-                 │                        spi_fsm ◄── bits_done ───┐   │
-                 │                        │  │  │                  │   │
-                 │           tx_load,tx_shift_en│ rx_shift_en      │   │
-                 │                   │           │                 │   │
-  tx_data ──────►│  tx_shift_register│           │ rx_shift_register│  │
-                 │      │            │           │        │        │  │
-                 │      └── mosi (pin)           └── miso (pin) ───┘  │
-                 │                                        │           │
-                 │              counter_clear/increment   ▼           │
-                 │                        spi_counter ──done──┐       │
-                 │                                     (bits_done)    │
-                 │                        rx_capture                  │
-                 │                             │                      │
-                 │                     rx_data / rx_valid ────────────►│── rx_data, rx_valid (out)
-                 │                                                     │
-                 │              cs_active ──► assign cs = ~cs_active ─►│── cs (pin, active-low)
-                 └─────────────────────────────────────────────────────┘
-```
- 
----
+
  
 ## Module reference
  
@@ -218,4 +190,3 @@ gtkwave dump.vcd
 - Parameterize `spi_counter`'s `done` comparison against `WIDTH` instead of
   the hardcoded `4'd8`, to support widths other than 8..
 
-  
