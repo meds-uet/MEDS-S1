@@ -125,7 +125,7 @@ module tb_s1_alu
     foreach (corner[i]) begin
       foreach (corner[j]) begin
         for (int unsigned o = 0; o <= int'(ALU_PASS_B); o++) begin
-          alu_op_e cur = alu_op_e'(o);
+          static alu_op_e cur = alu_op_e'(o);
           apply(cur, corner[i], corner[j]);
           check($sformatf("%s(c%0d,c%0d)", cur.name(), i, j), result, golden(cur, a, b));
         end
@@ -173,7 +173,7 @@ module tb_s1_alu
 
     // --- random ---------------------------------------------------------------
     for (int unsigned n = 0; n < 2000; n++) begin
-      alu_op_e cur = alu_op_e'($urandom_range(int'(ALU_PASS_B), 0));
+      static alu_op_e cur = alu_op_e'($urandom_range(int'(ALU_PASS_B), 0));
       apply(cur, {$urandom, $urandom}, {$urandom, $urandom});
       check($sformatf("rand %s", cur.name()), result, golden(cur, a, b));
     end

@@ -6,7 +6,7 @@
 #   make help                 what you can do
 #   make check-tools          what you are missing
 #   make check                repository conventions   (fast, run before every push)
-#   make lint                 lint + elaborate
+#   make lint                 lint + elaborate 
 #   make test-unit            unit testbenches
 #   make ci                   everything the PR gate runs
 #   make docs                 specification PDF
@@ -24,6 +24,7 @@ FIGS    := $(DOCS)/figures
 PDF     := $(DOCS)/MEDS-S1-Specification.pdf
 SPEC    := specs/MEDS-S1-SPECIFICATION.md
 BUILD   := build
+VERIBLE_RULES := verif/.rules.verible_lint
 
 # Packages must be compiled before anything that imports them.
 RTL_PKGS  := $(shell find rtl -name '*_pkg.sv' 2>/dev/null | sort)
@@ -66,6 +67,9 @@ help:
 	@echo
 	@echo "  Variables: CONFIG=$(CONFIG)  BOARD=$(BOARD)"
 	@echo "  Configs:   $(patsubst configs/%.yaml,%,$(wildcard configs/*.yaml))"
+	@echo "    lint           lint and elaborate CONFIG=$(CONFIG) (verilator + verible)"
+	@echo "    lint-verible   Verible style lint only"
+	@echo "    lint-verilator Verilator lint + elaborate only"
 
 # =============================================================================
 # Environment
@@ -82,6 +86,7 @@ check-tools:
 	echo "Required:"; \
 	need $(PY)                     "everything"; \
 	need verilator                 "simulation and lint"; \
+	need verible-verilog-lint      "style lint (Verible)"; \
 	echo "Software (T-06 onward):"; \
 	opt riscv64-unknown-elf-gcc    "building software"; \
 	echo "Verification (R-05, M-11, T-07):"; \
@@ -111,13 +116,25 @@ check-structure:
 check-docs:
 	@$(PY) $(SCRIPTS)/check_docs.py
 
-.PHONY: lint
-lint: $(CFG_FILE)
+.PHONY: lint lint-verilator lint-verible
+lint:
+	@rc=0; \
+	$(MAKE) --no-print-directory lint-verilator || rc=1; \
+	$(MAKE) --no-print-directory lint-verible   || rc=1; \
+	exit $$rc
+
+lint-verilator: $(CFG_FILE)
 	@echo "lint + elaborate: CONFIG=$(CONFIG)"
 	@verilator --lint-only -Wall --timing \
 	  $(addprefix -I,$(sort $(dir $(RTL_SRCS)))) \
 	  verif/verilator.vlt $(RTL_SRCS) \
 	  && echo "  lint clean"
+
+lint-verible: $(VERIBLE_RULES)
+	@echo "verible lint: rules=$(VERIBLE_RULES)"
+	@verible-verilog-lint --ruleset=none \
+	  --rules_config=$(VERIBLE_RULES) $(RTL_SRCS) \
+	  && echo "  verible clean"
 
 # =============================================================================
 # Test

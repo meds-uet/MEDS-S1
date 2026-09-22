@@ -62,6 +62,14 @@ jobs:
       - uses: actions/checkout@v4
       - name: install verilator
         run: sudo apt-get update && sudo apt-get install -y verilator
+      - name: install verible
+        run: |
+          URL=$(curl -s https://api.github.com/repos/chipsalliance/verible/releases/latest \
+            | grep "browser_download_url.*linux-static-x86_64.tar.gz" \
+            | cut -d '"' -f 4)
+          wget "$URL" -O verible.tar.gz
+          mkdir verible && tar -xzf verible.tar.gz -C verible --strip-components=1
+          sudo cp verible/bin/verible-verilog-lint /usr/local/bin/
       - name: lint ${{ matrix.config }}
         run: make lint CONFIG=${{ matrix.config }}
 
