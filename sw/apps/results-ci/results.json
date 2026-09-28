@@ -1,0 +1,25 @@
+[
+  {
+    "benchmark": "coremark",
+    "configuration": "temporary-spike",
+    "size": 666,
+    "total_ticks": 13176747,
+    "iterations": 40,
+    "compiler_version": "GCC 16.1.0",
+    "compiler_flags": "-O2 -march=rv64imac_zicsr_zifencei_zicbom_zicboz -mabi=lp64 -DVALIDATION_RUN=1  ",
+    "seedcrc": "0x18f2",
+    "crclist": "0xe3c1",
+    "crcmatrix": "0x0747",
+    "crcstate": "0x8d84",
+    "crcfinal": "0xf006",
+    "valid": true
+  },
+  {
+    "benchmark": "dhrystone",
+    "configuration": "temporary-spike",
+    "runs": 10000,
+    "total_cycles": 2340019,
+    "cycles_per_run": 234,
+    "valid": true
+  }
+]
