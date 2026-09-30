@@ -67,6 +67,26 @@ package s1_pkg;
   } exec_unit_e;
 
   // ---------------------------------------------------------------------------
+  // RVFI's memory group, carried with a completion-buffer entry until retire
+  // drives the trace port (SPEC 28.2).  Masks are relative to `addr`, data
+  // right-justified.
+  // ---------------------------------------------------------------------------
+  typedef struct packed {
+    logic [XLEN-1:0]       addr;
+    logic [XLEN/8-1:0]     rmask;
+    logic [XLEN/8-1:0]     wmask;
+    logic [XLEN-1:0]       rdata;
+    logic [XLEN-1:0]       wdata;
+  } rvfi_mem_t;
+
+  // The CSR read-modify-write EX computed, committed at retire (SPEC 7.3, 9.2).
+  typedef struct packed {
+    logic                  we;
+    logic [11:0]           addr;
+    logic [XLEN-1:0]       wdata;
+  } csr_upd_t;
+
+  // ---------------------------------------------------------------------------
   // Completion buffer entry (SPEC 9.1)
   //
   // `norollback` is 1 for every main-pipe instruction and is driven by the
@@ -141,5 +161,82 @@ package s1_pkg;
     logic                 err;
     logic [1:0]           errcode;
   } mem_rsp_t;
+
+  // ---------------------------------------------------------------------------
+  // MEM/WB, copied verbatim from #18 (s1_mem_stage).
+  // Delete this copy when rebasing onto #18, which defines it.
+  // ---------------------------------------------------------------------------
+
+  // MEM/WB: one completion per instruction.  The mem_* group is RVFI's: the
+  // access address, byte masks relative to it, and right-justified data.
+  typedef struct packed {
+    logic [CB_IDX_W-1:0]   cb_idx;
+    logic                  complete;    // from EX/MEM; WB marks the CB entry done
+    logic [REG_ADDR_W-1:0] rd;
+    logic                  rd_we;
+    logic [XLEN-1:0]       result;      // load / LR / AMO value, SC status, else EX's result
+    logic [XLEN-1:0]       next_pc;
+    logic                  csr_we;
+    logic [11:0]           csr_addr;
+    logic [XLEN-1:0]       csr_wdata;
+    logic                  sb_alloc;    // owns a store-buffer entry: retire must commit it
+    logic                  exc;
+    logic [5:0]            exccode;
+    logic [XLEN-1:0]       exctval;
+    logic [XLEN-1:0]       mem_addr;
+    logic [XLEN/8-1:0]     mem_rmask;
+    logic [XLEN/8-1:0]     mem_wmask;
+    logic [XLEN-1:0]       mem_rdata;
+    logic [XLEN-1:0]       mem_wdata;
+  } mem_wb_t;
+
+  // ---------------------------------------------------------------------------
+  // Write-back stage (rtl/core/s1_wb_stage.sv).  Contract: docs/modules/s1_wb_stage.md.
+  // ---------------------------------------------------------------------------
+
+  // What WB writes into the completion buffer entry it names.  R-01 owns
+  // cb_entry_t; this is the subset WB produces, already gated -- the buffer
+  // stores these fields, it does not re-derive them.
+  typedef struct packed {
+    logic                  done;        // SPEC 9.2; see the s1_wb_stage header
+    logic                  norollback;  // 1 for every main-pipe instruction (SPEC 9.1)
+    logic                  from_main;   // 1 = the main pipe produced this, so the pass-through
+                                        // group below is live.  0 = a multi-cycle unit, which
+                                        // knows only rd/result -- the entry keeps the rest.
+    logic [REG_ADDR_W-1:0] rd;
+    logic                  rd_we;       // already gated on x0 and on exc
+    logic [XLEN-1:0]       result;
+    logic [XLEN-1:0]       next_pc;     // RVFI pc_wdata
+    logic                  exc;
+    logic [5:0]            exccode;
+    logic [XLEN-1:0]       exctval;
+    csr_upd_t              csr;
+    logic                  sb_alloc;    // retire must commit this store-buffer entry
+    rvfi_mem_t             rvfi;
+  } wb_upd_t;
+
+  // ---------------------------------------------------------------------------
+  // Multi-cycle completion (rtl/core/s1_wb_stage.sv).
+  // Contract: docs/modules/s1_wb_stage.md.
+  // ---------------------------------------------------------------------------
+
+  // MUL/DIV -> WB completion, the return leg of #15's md_req_t.  RV64M raises no
+  // exceptions -- divide by zero and signed overflow are defined results, not
+  // traps -- so there is no exception group here.  Nor is there a `unit`: the
+  // request carried one because the dispatcher had to choose a unit, but the
+  // response only has to name an entry, and that entry already records which
+  // unit owns it.  The units themselves are T-02's; this is the shape of the
+  // wire between them and WB.
+  // There is no `rd_we`.  #15's md_req_t has none either, so a unit would have
+  // nothing to derive one from and would tie it high; and RV64M has no
+  // multiply or divide that writes no register.  A destination of x0 is the
+  // only "no write" case and WB gates it.  Response mirrors request: an entry,
+  // a register, a value.  If md_req_t ever gains rd_we, this should regain it
+  // in the same change.
+  typedef struct packed {
+    logic [CB_IDX_W-1:0]   cb_idx;
+    logic [REG_ADDR_W-1:0] rd;
+    logic [XLEN-1:0]       result;
+  } md_rsp_t;
 
 endpackage
