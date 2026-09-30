@@ -26,6 +26,7 @@ Status tags follow CODING_STANDARD.md §5. This table is the fastest way to see 
 | `s1_csr.sv` | TODO | T-03 | | |
 | `s1_completion_buffer.sv` | TODO | **R-01 (critical path)** | | |
 | `s1_mxif_port.sv` | TODO | **R-01 (critical path)** | | |
+| `s1_mem_stage.sv` | WIP — unit-verified, input is `ex_mem_t` from #15 | R-02 | `tb_s1_mem_stage` (891978 checks) | [page](../../docs/modules/s1_mem_stage.md) |
 | `s1_lsu.sv` | TODO | R-02 | | |
 | `s1_pmp.sv` | TODO | R-02 | | |
 | `s1_core.sv` | TODO | T-02 / R-01 | | |

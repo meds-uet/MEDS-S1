@@ -27,6 +27,7 @@ package s1_pkg;
   parameter int unsigned MXIF_ID_W = 4;    // INTERFACES.md 1.3
 
   parameter int unsigned PMP_N     = 16;
+  parameter int unsigned SB_DEPTH  = 4;    // store buffer entries (SPEC 14)
 
   // Reset vector.  Overridable per config; the boot ROM lives here.
   parameter logic [XLEN-1:0] BOOT_ADDR = 64'h0000_0000_0000_1000;
@@ -141,5 +142,75 @@ package s1_pkg;
     logic                 err;
     logic [1:0]           errcode;
   } mem_rsp_t;
+
+  // ---------------------------------------------------------------------------
+  // EX/MEM types the memory stage consumes, copied verbatim from #15 (execute).
+  // Delete this copy when rebasing onto #15, which defines them.
+  // ---------------------------------------------------------------------------
+
+  // Load/store operand width, ID-stage view. The LSU, not the
+  // decoder, owns that translation.
+  typedef enum logic [1:0] {
+    LS_BYTE, LS_HALF, LS_WORD, LS_DOUBLE
+  } ls_size_e;
+
+  // RV64A atomic-memory-operation, from funct7[6:2].
+  typedef enum logic [3:0] {
+    AMO_LR, AMO_SC, AMO_SWAP, AMO_ADD, AMO_XOR, AMO_AND, AMO_OR,
+    AMO_MIN, AMO_MAX, AMO_MINU, AMO_MAXU, AMO_NONE
+  } amo_op_e;
+
+  // EX/MEM register.
+  typedef struct packed {
+    logic [CB_IDX_W-1:0]   cb_idx;
+    logic                  complete;    // WB marks the CB entry done; 0 for MXIF candidates
+    logic [REG_ADDR_W-1:0] rd;
+    logic                  rd_we;
+    logic [XLEN-1:0]       result;      // ALU, link or old CSR value; loads replace it in MEM
+    logic [XLEN-1:0]       next_pc;     // actual successor (RVFI pc_wdata)
+    logic                  is_load;
+    logic                  is_store;
+    logic                  is_amo;
+    ls_size_e              mem_size;
+    logic                  mem_signed;
+    amo_op_e               amo_op;
+    logic                  aq;
+    logic                  rl;
+    logic [XLEN-1:0]       mem_addr;
+    logic [XLEN-1:0]       mem_wdata;
+    logic                  csr_we;      // committed at retire (SPEC 7.3)
+    logic [11:0]           csr_addr;
+    logic [XLEN-1:0]       csr_wdata;
+    logic                  exc;
+    logic [5:0]            exccode;
+    logic [XLEN-1:0]       exctval;
+  } ex_mem_t;
+
+  // ---------------------------------------------------------------------------
+  // Memory stage (rtl/core/s1_mem_stage.sv).  Contract: docs/modules/s1_mem_stage.md.
+  // ---------------------------------------------------------------------------
+
+  // MEM/WB: one completion per instruction.  The mem_* group is RVFI's: the
+  // access address, byte masks relative to it, and right-justified data.
+  typedef struct packed {
+    logic [CB_IDX_W-1:0]   cb_idx;
+    logic                  complete;    // from EX/MEM; WB marks the CB entry done
+    logic [REG_ADDR_W-1:0] rd;
+    logic                  rd_we;
+    logic [XLEN-1:0]       result;      // load / LR / AMO value, SC status, else EX's result
+    logic [XLEN-1:0]       next_pc;
+    logic                  csr_we;
+    logic [11:0]           csr_addr;
+    logic [XLEN-1:0]       csr_wdata;
+    logic                  sb_alloc;    // owns a store-buffer entry: retire must commit it
+    logic                  exc;
+    logic [5:0]            exccode;
+    logic [XLEN-1:0]       exctval;
+    logic [XLEN-1:0]       mem_addr;
+    logic [XLEN/8-1:0]     mem_rmask;
+    logic [XLEN/8-1:0]     mem_wmask;
+    logic [XLEN-1:0]       mem_rdata;
+    logic [XLEN-1:0]       mem_wdata;
+  } mem_wb_t;
 
 endpackage
