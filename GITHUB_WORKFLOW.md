@@ -7,7 +7,7 @@ rotating team of part-time contributors produce a coherent platform.**
 |---|---|
 | **Version** | 0.1 — DRAFT |
 | **Date** | 2026-08-03 |
-| **Companions** | `EXECUTION_PLAN.md`, `specs/MEDS-S1-SPECIFICATION.md` |
+| **Companions** | `specs/MEDS-S1-SPECIFICATION.md` |
 
 ---
 
@@ -266,7 +266,7 @@ arrives to an empty queue loses their first week and often does not come back.
 
 ### 6.3 Milestones
 
-One per phase, matching `EXECUTION_PLAN.md` §5:
+One per phase:
 
 `Phase 0 — Foundations` · `Phase 1 — Core` · `Phase 2 — SoC in simulation` ·
 `Phase 3 — Real hardware` · `Phase 4 — Extensibility` · `Phase 5 — Linux`

@@ -68,14 +68,13 @@ Read in this order.
 
 | # | Document | What it answers | Audience |
 |---|---|---|---|
-| 1 | [design_doc.md](design_doc.md) | the original strategic framing | everyone |
+| 1 | design_doc.md | the original strategic framing — **under progress**, not yet ready to publish | everyone |
 | 2 | [specs/MEDS-S1-SPECIFICATION.md](specs/MEDS-S1-SPECIFICATION.md) | **the comprehensive spec** — architecture, block diagrams, accelerator integration, research methodology | all stakeholders |
 | 3 | [specs/INTERFACES.md](specs/INTERFACES.md) | **normative** — MXIF, memory protocol, socket, RVFI, PMAs. The file that must not change. | implementers |
-| 4 | [EXECUTION_PLAN.md](EXECUTION_PLAN.md) | 22 work packages, roles, tiers, phases, staffing, risks | tech lead, contributors |
-| 5 | [GITHUB_WORKFLOW.md](GITHUB_WORKFLOW.md) | repos, branches, issues, CI, reviews, releases | everyone |
-| 6 | [CONTRIBUTING.md](CONTRIBUTING.md) | the short version of 6 and 7 | everyone |
-| 7 | [docs/guidelines/](docs/guidelines/) | coding standard, verification guide, review checklist, onboarding | everyone writing code |
-| 8 | [docs/adr/](docs/adr/) | why each irreversible decision was made | architects, reviewers |
+| 4 | [GITHUB_WORKFLOW.md](GITHUB_WORKFLOW.md) | repos, branches, issues, CI, reviews, releases | everyone |
+| 5 | [CONTRIBUTING.md](CONTRIBUTING.md) | the short version of 4 and 6 | everyone |
+| 6 | [docs/guidelines/](docs/guidelines/) | coding standard, verification guide, review checklist, onboarding | everyone writing code |
+| 7 | [docs/adr/](docs/adr/) | why each irreversible decision was made | architects, reviewers |
 
 ### The specification as a PDF
 

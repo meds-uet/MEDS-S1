@@ -7,7 +7,7 @@
 # each is present and skipped so enabling it is a one-line change.
 #
 # Synthesis needs the self-hosted runner and a Vivado licence permitting
-# headless batch use -- verify BEFORE purchase (EXECUTION_PLAN R12).
+# headless batch use -- verify BEFORE purchase.
 name: Nightly
 
 on:

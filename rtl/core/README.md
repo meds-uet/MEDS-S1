@@ -43,4 +43,4 @@ Status tags follow CODING_STANDARD.md §5. This table is the fastest way to see 
 
 ---
 *Conventions: [`docs/guidelines/CODING_STANDARD.md`](../../docs/guidelines/CODING_STANDARD.md) ·
-Definition of done: [`EXECUTION_PLAN.md`](../../EXECUTION_PLAN.md) §8*
+Definition of done: [`PROJECTS.md`](../../PROJECTS.md)*

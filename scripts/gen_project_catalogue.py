@@ -43,7 +43,7 @@ TIER_COLOUR = {"Mentee": "#1B998B", "Mentor": "#1A7CC1", "Graduate RA": "#7B2D8B
 # The projects.  Every entry is exactly one page.
 #
 # If a project needs more than fits on a page it is a work package, not a
-# project, and it needs decomposing (EXECUTION_PLAN.md §4.2).
+# project, and it needs decomposing.
 #
 # Keys:
 #   id title tier track wp team weeks priority prereq
@@ -96,7 +96,7 @@ dict(
         ("W4", "Directed testbench"),
         ("W5", "HAL driver and printf backend"),
         ("W6", "Integration, documentation, PR review")],
- refs="Spec §24 (peripherals), SCOPE_CONTRACT §5 (reuse policy), EXECUTION_PLAN WP9/WP14",
+ refs="Spec §24 (peripherals), SCOPE_CONTRACT §5 (reuse policy)",
 ),
 
 dict(
@@ -135,7 +135,7 @@ dict(
         ("W4", "Testbench and flash model"),
         ("W5", "HAL driver"),
         ("W6", "Example application and documentation")],
- refs="Spec §24, FR-15 (boot from ROM, second stage from UART/SD/QSPI), EXECUTION_PLAN WP9",
+ refs="Spec §24, FR-15 (boot from ROM, second stage from UART/SD/QSPI)",
 ),
 
 dict(
@@ -174,7 +174,7 @@ dict(
         ("W3", "Timer RTL and testbench"),
         ("W4", "HAL drivers"),
         ("W5", "Example application and documentation")],
- refs="Spec §24, RISC-V Privileged Spec (CLINT), EXECUTION_PLAN WP9",
+ refs="Spec §24, RISC-V Privileged Spec (CLINT)",
 ),
 
 dict(
@@ -214,7 +214,7 @@ dict(
         ("W4", "UART second-stage path"),
         ("W5", "QSPI path with M-02"),
         ("W6", "Self-test, banner, documentation")],
- refs="Spec §24, FR-15, SCOPE_CONTRACT §2.2, EXECUTION_PLAN WP9",
+ refs="Spec §24, FR-15, SCOPE_CONTRACT §2.2",
 ),
 
 dict(
@@ -253,7 +253,7 @@ dict(
         ("W3", "Scoreboard and negative tests"),
         ("W4", "Coverage model"),
         ("W5", "CI integration and the coverage report")],
- refs="Spec §11, INTERFACES.md P1–P5, EXECUTION_PLAN WP13",
+ refs="Spec §11, INTERFACES.md P1–P5",
 ),
 
 dict(
@@ -292,7 +292,7 @@ dict(
         ("W3", "Forwarding testbench"),
         ("W4", "Constrained-random layer"),
         ("W5", "Coverage closure and CI integration")],
- refs="Spec §7, §8, EXECUTION_PLAN WP13",
+ refs="Spec §7, §8",
 ),
 
 dict(
@@ -331,7 +331,7 @@ dict(
         ("W2–3", "Porting both benchmarks onto the BSP"),
         ("W4", "Parser and CI job"),
         ("W5", "Regression gate and history file")],
- refs="Spec §32.1, NFR-2, NFR-10, EXECUTION_PLAN WP19",
+ refs="Spec §32.1, NFR-2, NFR-10",
 ),
 
 dict(
@@ -369,7 +369,7 @@ dict(
         ("W2–4", "Porting, benchmark by benchmark"),
         ("W5", "CI job and results table"),
         ("W6", "Analysis of the slow cases")],
- refs="Spec §32.1, §34, EXECUTION_PLAN WP19",
+ refs="Spec §32.1, §34",
 ),
 
 dict(
@@ -407,7 +407,7 @@ dict(
         ("W4", "Report formatter for the §34 table"),
         ("W5", "Overhead measurement"),
         ("W6", "Integration with a benchmark and documentation")],
- refs="Spec §12, §31, §34, EXECUTION_PLAN WP14/WP19",
+ refs="Spec §12, §31, §34",
 ),
 
 dict(
@@ -445,7 +445,7 @@ dict(
         ("W2", "CODING_STANDARD.md and the Verible config"),
         ("W3", "CI gates"),
         ("W4", "Pre-commit hook, negative testing, documentation")],
- refs="NFR-4, NFR-7, Appendix D, EXECUTION_PLAN WP1/WP22 and §10 week 3",
+ refs="NFR-4, NFR-7, Appendix D",
 ),
 
 dict(
@@ -485,7 +485,7 @@ dict(
         ("W3–4", "Full suite execution and triage"),
         ("W5", "Report and issue filing"),
         ("W6", "Automation so it reruns from one command")],
- refs="Spec §28.3, §28.6, FR-1, EXECUTION_PLAN WP12; RISCOF and riscv-arch-test upstream",
+ refs="Spec §28.3, §28.6, FR-1; RISCOF and riscv-arch-test upstream",
 ),
 
 dict(
@@ -524,7 +524,7 @@ dict(
         ("W4", "Clocking, BRAM and interconnect IP"),
         ("W5", "Debug cores"),
         ("W6", "Decision memo and Tcl scripting")],
- refs="Spec §29 (FPGA implementation), §30 (area/timing budgets), EXECUTION_PLAN WP16",
+ refs="Spec §29 (FPGA implementation), §30 (area/timing budgets)",
 ),
 
 dict(
@@ -538,12 +538,12 @@ dict(
  build=[
    "A README template: purpose, ports, parameters, timing assumptions, reset behaviour, owner, backup",
    "A README for every module that lacks one, written by reading the RTL and interviewing the owner",
-   "A handover-note section, per EXECUTION_PLAN §12, in each module README",
+   "A handover-note section covering continuity across cohorts, in each module README",
    "A docs index page linking every module README",
    "A list of the places where the RTL and the specification disagree, filed as issues",
  ],
  lit=[
-   "EXECUTION_PLAN §12 (continuity across cohorts) and §8 (definition of done for a WP)",
+   "PROJECTS.md's Definition of done section (continuity and WP acceptance criteria)",
    "Two well-documented open-source hardware repos, for what good looks like",
    "Deliverable: the README template itself, reviewed and agreed before the sweep starts",
  ],
@@ -559,7 +559,7 @@ dict(
  miles=[("W1", "Template design and review"),
         ("W2–3", "The sweep, module by module"),
         ("W4", "Index, discrepancy list, issue filing")],
- refs="NFR-7, EXECUTION_PLAN §8 and §12, spec Appendix D",
+ refs="NFR-7, spec Appendix D",
 ),
 
 dict(
@@ -598,7 +598,7 @@ dict(
         ("W2", "Read the documentation and structure; draft sections"),
         ("W3", "Comparison table and report"),
         ("W4", "Presentations")],
- refs="EXECUTION_PLAN §10 weeks 1–2, SCOPE_CONTRACT §3, ADDENDUM.md",
+ refs="SCOPE_CONTRACT §3, ADDENDUM.md",
 ),
 
 dict(
@@ -637,7 +637,7 @@ dict(
         ("W2–3", "Paper survey and the measurement tally"),
         ("W4", "Write-up"),
         ("W5", "Recommendation and presentation")],
- refs="Spec §19–§21, §31, §34, INTERFACES.md, EXECUTION_PLAN WP0",
+ refs="Spec §19–§21, §31, §34, INTERFACES.md",
 ),
 
 dict(
@@ -656,7 +656,6 @@ dict(
    "The exercise wired into the onboarding path so every new cohort does it",
  ],
  lit=[
-   "EXECUTION_PLAN §4.1 (the on-ramp) — this project is that paragraph, built",
    "The platform fetch_req/fetch_rsp and memory interfaces in INTERFACES.md",
    "Deliverable: a half-page note predicting which tests you expect a naive core to "
    "fail, written before you run anything; compare it with reality afterwards",
@@ -676,7 +675,7 @@ dict(
         ("W4", "Run, collect and explain the failures"),
         ("W5", "Write the guide"),
         ("W6", "Test the guide on a real student and revise")],
- refs="EXECUTION_PLAN §4.1 and §11, NFR-9, INTERFACES.md",
+ refs="NFR-9, INTERFACES.md",
 ),
 
 # ===================== MENTOR =====================================
@@ -718,7 +717,7 @@ dict(
         ("W6–7", "BTFN and C-expansion"),
         ("W8–9", "Unit testbench and fault cases"),
         ("W10", "Integration, baseline measurement, documentation")],
- refs="Spec §6, §7.1, INTERFACES.md, SCOPE_CONTRACT §2.1, EXECUTION_PLAN WP2",
+ refs="Spec §6, §7.1, INTERFACES.md, SCOPE_CONTRACT §2.1",
 ),
 
 dict(
@@ -758,7 +757,7 @@ dict(
         ("W6–8", "ALU, branch, AGU"),
         ("W9–10", "Forwarding and hazard unit"),
         ("W11–12", "Multi-cycle dispatch port, integration, documentation")],
- refs="Spec §7, §8, §9, EXECUTION_PLAN WP3 (critical path)",
+ refs="Spec §7, §8, §9 (critical path)",
 ),
 
 dict(
@@ -798,7 +797,7 @@ dict(
         ("W6–8", "Trap architecture and privilege FSM"),
         ("W9–10", "Performance counters and event selectors"),
         ("W11–12", "Testbench, arch-test bring-up, documentation")],
- refs="Spec §10, §12, §13, Appendix C, SCOPE_CONTRACT §4, EXECUTION_PLAN WP4",
+ refs="Spec §10, §12, §13, Appendix C, SCOPE_CONTRACT §4",
 ),
 
 dict(
@@ -838,7 +837,7 @@ dict(
         ("W6–7", "Width adapters"),
         ("W8", "Address decode from soc.yaml"),
         ("W9–10", "Traffic testbench, bandwidth measurement, documentation")],
- refs="Spec §18, INTERFACES.md, SCOPE_CONTRACT §5, EXECUTION_PLAN WP8",
+ refs="Spec §18, INTERFACES.md, SCOPE_CONTRACT §5",
 ),
 
 dict(
@@ -877,7 +876,7 @@ dict(
         ("W4–6", "PLIC"),
         ("W7", "soc.yaml integration"),
         ("W8", "Testbench closure and documentation")],
- refs="Spec §24, §20.2, RISC-V PLIC spec, EXECUTION_PLAN WP9",
+ refs="Spec §24, §20.2, RISC-V PLIC spec",
 ),
 
 dict(
@@ -918,7 +917,7 @@ dict(
         ("W7–8", "HAL and printf paths"),
         ("W9", "make run across boards"),
         ("W10", "Onboarding test and revision")],
- refs="Spec §27, NFR-9, EXECUTION_PLAN WP14 and §11",
+ refs="Spec §27, NFR-9",
 ),
 
 dict(
@@ -957,7 +956,7 @@ dict(
         ("W4–5", "CI integration and the runner"),
         ("W6", "Per-config test selection"),
         ("W7–8", "Reporting, nightly job, documentation")],
- refs="Spec §28, §28.5, §28.6, NFR-3, EXECUTION_PLAN WP12 and §10 week 3",
+ refs="Spec §28, §28.5, §28.6, NFR-3",
 ),
 
 dict(
@@ -997,7 +996,7 @@ dict(
         ("W5–7", "DDR3 and MIG calibration"),
         ("W8–10", "Full SoC integration and timing closure"),
         ("W11–12", "Out-of-context flow, reports, documentation")],
- refs="Spec §29, §30, NFR-1, NFR-8, EXECUTION_PLAN WP16",
+ refs="Spec §29, §30, NFR-1, NFR-8",
 ),
 
 # ===================== GRADUATE RA =================================
@@ -1041,7 +1040,7 @@ dict(
         ("W7–9", "MXIF port and two-phase completion"),
         ("W10–11", "Conformance testbench and SVA"),
         ("W12", "MEDS-V attachment trial with the MEDS-V team")],
- refs="Spec §9, §19; INTERFACES.md §1; EXECUTION_PLAN WP5, risk R8",
+ refs="Spec §9, §19; INTERFACES.md §1",
 ),
 
 dict(
@@ -1081,7 +1080,7 @@ dict(
         ("W6–7", "PMP and PMA"),
         ("W8–10", "Atomics and reservations"),
         ("W11–12", "Interlock measurement, arch-tests, documentation")],
- refs="Spec §11, §14; INTERFACES.md §1.5; SCOPE_CONTRACT §3; EXECUTION_PLAN WP6",
+ refs="Spec §11, §14; INTERFACES.md §1.5; SCOPE_CONTRACT §3",
 ),
 
 dict(
@@ -1121,7 +1120,7 @@ dict(
         ("W5–7", "I$"),
         ("W8–10", "D$ and write buffer"),
         ("W11–12", "Zicbom, testbenches, baseline measurement")],
- refs="Spec §15, §17; NFR-5; SCOPE_CONTRACT §3; EXECUTION_PLAN WP7",
+ refs="Spec §15, §17; NFR-5; SCOPE_CONTRACT §3",
 ),
 
 dict(
@@ -1162,7 +1161,7 @@ dict(
         ("W8–9", "Verilator top, OpenOCD, PMA decode"),
         ("W10–11", "Golden tests and CI"),
         ("W12", "Contributor guide and the NFR-9 test")],
- refs="Spec §26, Appendix B; NFR-9; EXECUTION_PLAN WP10",
+ refs="Spec §26, Appendix B; NFR-9",
 ),
 
 dict(
@@ -1203,7 +1202,7 @@ dict(
         ("W5–7", "Spike harness and the DPI layer"),
         ("W8", "Divergence reporting"),
         ("W9–10", "CI integration, fault injection testing, documentation")],
- refs="Spec §28.1, §28.2; INTERFACES.md §5; EXECUTION_PLAN WP11",
+ refs="Spec §28.1, §28.2; INTERFACES.md §5",
 ),
 
 dict(
@@ -1244,7 +1243,7 @@ dict(
         ("W6–7", "OpenOCD and GDB bring-up"),
         ("W8–9", "Semihosting"),
         ("W10", "Hardware validation and documentation")],
- refs="Spec §13, §27.2; RISC-V Debug Spec; EXECUTION_PLAN WP15, risk R6",
+ refs="Spec §13, §27.2; RISC-V Debug Spec",
 ),
 
 dict(
@@ -1285,7 +1284,7 @@ dict(
         ("W6–7", "CDC and IRQ synchronisation"),
         ("W8–9", "Conformance testbench"),
         ("W10", "Driver template and the author's guide")],
- refs="Spec §20, §21, §22; INTERFACES.md §4; NFR-6; EXECUTION_PLAN WP17, risk R10",
+ refs="Spec §20, §21, §22; INTERFACES.md §4; NFR-6",
 ),
 
 ]
@@ -1429,7 +1428,7 @@ def cover() -> str:
   <div class="foot">
     MEDS-S1 is an open RISC-V SoC platform whose purpose is to be attached to. Apache-2.0.<br>
     Companion documents: specs/MEDS-S1-SPECIFICATION.md &middot; specs/INTERFACES.md &middot;
-    specs/SCOPE_CONTRACT.md &middot; EXECUTION_PLAN.md
+    specs/SCOPE_CONTRACT.md
   </div>
 </div>"""
 

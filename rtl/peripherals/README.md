@@ -33,4 +33,4 @@ M-01 UART · M-02 SPI · M-03 GPIO/timer · T-05 CLINT and PLIC
 
 ---
 *Conventions: [`docs/guidelines/CODING_STANDARD.md`](../../docs/guidelines/CODING_STANDARD.md) ·
-Definition of done: [`EXECUTION_PLAN.md`](../../EXECUTION_PLAN.md) §8*
+Definition of done: [`PROJECTS.md`](../../PROJECTS.md)*

@@ -142,7 +142,7 @@ def render(projects: list[dict]) -> str:
 
 ## Definition of done — every project
 
-From [`EXECUTION_PLAN.md`](EXECUTION_PLAN.md) §8. A work package is not done because the RTL exists:
+A work package is not done because the RTL exists:
 
 - ☐ Spec or design note reviewed **before** implementation
 - ☐ Code merged, lint clean, no unjustified waivers

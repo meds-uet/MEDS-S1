@@ -14,4 +14,4 @@ T-04 crossbar and address decode
 
 ---
 *Conventions: [`docs/guidelines/CODING_STANDARD.md`](../../docs/guidelines/CODING_STANDARD.md) ·
-Definition of done: [`EXECUTION_PLAN.md`](../../EXECUTION_PLAN.md) §8*
+Definition of done: [`PROJECTS.md`](../../PROJECTS.md)*
