@@ -15,7 +15,7 @@ is a defect in *our documentation*, not in you — open an issue labelled `type:
 | **Verilator** ≥ 5.0 | simulation, lint | `verilator --version` |
 | `riscv64-unknown-elf-gcc` | building software | `riscv64-unknown-elf-gcc --version` |
 | `spike` | co-simulation reference | `spike --help` |
-| `sail` / `riscof` | compliance (layer 3) | `riscof --version` |
+| sail-riscv model (`sail_riscv_sim` or similar) / `riscof` | compliance (layer 3) | `make check-tools` |
 | `pandoc` + Chrome | building the docs | `make check-tools` |
 
 ```bash

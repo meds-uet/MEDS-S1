@@ -79,6 +79,12 @@ check-tools:
 	opt()  { printf "  %-28s " "$$1"; \
 	         if command -v $$1 >/dev/null 2>&1; then echo "OK"; \
 	         else echo "absent -- $$2"; fi; }; \
+	opt_any() { label=$$1; desc=$$2; shift 2; \
+	            printf "  %-28s " "$$label"; \
+	            for cand in "$$@"; do \
+	              if command -v $$cand >/dev/null 2>&1; then echo "OK ($$cand)"; return 0; fi; \
+	            done; \
+	            echo "absent -- $$desc"; }; \
 	echo "Required:"; \
 	need $(PY)                     "everything"; \
 	need verilator                 "simulation and lint"; \
@@ -87,7 +93,8 @@ check-tools:
 	echo "Verification (R-05, M-11, T-07):"; \
 	opt spike                      "co-simulation reference"; \
 	opt riscof                     "architectural tests"; \
-	opt sail                       "ACT golden reference"; \
+	opt_any sail "ACT golden reference (sail-riscv model)" \
+	         sail_riscv_sim riscv_sim_RV64 riscv_sim_RV32 sail; \
 	echo "Documentation:"; \
 	opt pandoc                     "specification PDF"; \
 	opt google-chrome              "PDF rendering"; \
