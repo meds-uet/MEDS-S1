@@ -67,6 +67,15 @@ package s1_pkg;
   } exec_unit_e;
 
   // ---------------------------------------------------------------------------
+  // Forwarding source of an EX operand (SPEC 8.1), copied verbatim from #15
+  // (execute). Selected by s1_regfile.sv in ID; resolved into a value by
+  // s1_execute.sv. Delete this copy when rebasing onto #15, which defines it.
+  // ---------------------------------------------------------------------------
+  typedef enum logic [1:0] {
+    FWD_RF, FWD_EXMEM, FWD_MEMWB, FWD_CB
+  } fwd_src_e;
+
+  // ---------------------------------------------------------------------------
   // Completion buffer entry (SPEC 9.1)
   //
   // `norollback` is 1 for every main-pipe instruction and is driven by the

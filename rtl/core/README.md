@@ -22,7 +22,7 @@ Status tags follow CODING_STANDARD.md §5. This table is the fastest way to see 
 | `s1_alu.sv` | **COMPLETE — REFERENCE** | T-02 | `tb_s1_alu` (4206 checks) | [page](../../docs/modules/s1_alu.md) |
 | `s1_fetch.sv` | TODO | T-01 | | |
 | `s1_decode.sv` | TODO | T-02 | | |
-| `s1_regfile.sv` | TODO | T-02 | | |
+| `s1_regfile.sv` | WIP -- blocked on R-03 (SRAM-wrapper decision, see doc) | T-02 | `tb_s1_regfile` (10028 checks) | [page](../../docs/modules/s1_regfile.md) |
 | `s1_csr.sv` | TODO | T-03 | | |
 | `s1_completion_buffer.sv` | TODO | **R-01 (critical path)** | | |
 | `s1_mxif_port.sv` | TODO | **R-01 (critical path)** | | |
