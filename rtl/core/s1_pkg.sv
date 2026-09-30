@@ -141,5 +141,18 @@ package s1_pkg;
     logic                 err;
     logic [1:0]           errcode;
   } mem_rsp_t;
+  
+  // ---------------------------------------------------------------------------
+  // mstatus (M-mode subset only, v1.0 scope -- SPEC Appendix C)
+  // ---------------------------------------------------------------------------
+  typedef struct packed {
+    logic [50:0] reserved_hi;
+    logic [1:0]  mpp;     // bits [12:11]
+    logic [2:0]  reserved_mid;
+    logic        mpie;    // bit [7]
+    logic [2:0]  reserved_lo;
+    logic        mie;     // bit [3]
+    logic [2:0]  reserved_bot;
+  } mstatus_t;
 
 endpackage
