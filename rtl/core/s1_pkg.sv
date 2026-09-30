@@ -67,6 +67,120 @@ package s1_pkg;
   } exec_unit_e;
 
   // ---------------------------------------------------------------------------
+  // Decode-stage types (rtl/core/s1_decode.sv)
+  // ---------------------------------------------------------------------------
+
+  // Load/store operand width, ID-stage view. The LSU, not the
+  // decoder, owns that translation.
+  typedef enum logic [1:0] {
+    LS_BYTE, LS_HALF, LS_WORD, LS_DOUBLE
+  } ls_size_e;
+
+  // Zicsr operation.  CSRRW/CSRRS/CSRRC and their *-immediate forms collapse
+  // to the same three read-modify-write ops; `decoded_op_t.csr_imm` carries
+  // whether the operand is rs1 or a zero-extended uimm[4:0].
+  typedef enum logic [1:0] {
+    CSR_RW, CSR_RS, CSR_RC, CSR_NONE
+  } csr_op_e;
+
+  // RV64A atomic-memory-operation, from funct7[6:2].
+  typedef enum logic [3:0] {
+    AMO_LR, AMO_SC, AMO_SWAP, AMO_ADD, AMO_XOR, AMO_AND, AMO_OR,
+    AMO_MIN, AMO_MAX, AMO_MINU, AMO_MAXU, AMO_NONE
+  } amo_op_e;
+
+  // Zicbom/Zicboz cache-block operation, from imm[11:0] under OP_MISC_MEM
+  // funct3==010. CBO_ZERO is Zicboz; the other
+  // three are Zicbom. Address is rs1 alone, same as AMO -- no offset.
+  typedef enum logic [2:0] {
+    CBO_INVAL, CBO_CLEAN, CBO_FLUSH, CBO_ZERO, CBO_NONE
+  } cbo_op_e;
+
+  // RV64M operation.  W-suffixed forms are the OP-32 (word) encodings, kept as
+  // distinct values for the same reason alu_op_e keeps ALU_ADDW distinct from
+  // ALU_ADD: the multiply/divide unit needs to know the truncation width
+  // without decoding funct7/opcode a second time.
+  typedef enum logic [3:0] {
+    MULDIV_MUL, MULDIV_MULH, MULDIV_MULHSU, MULDIV_MULHU,
+    MULDIV_DIV, MULDIV_DIVU, MULDIV_REM, MULDIV_REMU,
+    MULDIV_MULW, MULDIV_DIVW, MULDIV_DIVUW, MULDIV_REMW, MULDIV_REMUW,
+    MULDIV_NONE
+  } muldiv_op_e;
+
+  // System/privileged/Zifencei micro-op (FENCE, FENCE.I, and SYSTEM funct3==000
+  // instructions). MRET/SRET/WFI/DRET legality (privilege, debug mode) is
+  // checked at retire, not here (SPEC 10.1, 13). SFENCE.VMA differs: rs1/rs2
+  // are real operands (vaddr, asid), identified by funct7==0001001; only rd
+  // is fixed to 0.
+  typedef enum logic [3:0] {
+    SYS_NONE, SYS_ECALL, SYS_EBREAK, SYS_MRET, SYS_SRET, SYS_WFI,
+    SYS_FENCE, SYS_FENCE_I, SYS_SFENCE_VMA, SYS_DRET
+  } sys_op_e;
+
+  // ---------------------------------------------------------------------------
+  // decoded_op_t -- ID-stage control bundle (SPEC 7.2). Produced only by
+  // s1_decode.sv; consumed by s1_regfile, s1_alu, s1_lsu, s1_csr, and
+  // s1_completion_buffer. Carries no register values and no privilege
+  // checks -- those belong to s1_regfile.sv and s1_csr.sv respectively.
+  // ---------------------------------------------------------------------------
+  typedef struct packed {
+    // -- classification ------------------------------------------------------
+    exec_unit_e             unit;            // which unit/completion path owns this op
+    logic                   illegal;         // no unit will ever accept this encoding
+    logic                   mxif_candidate;  // unit==UNIT_MXIF: unrecognised or coprocessor-routed opcode
+
+    // -- register addressing ---------------------------------------------------
+    logic [REG_ADDR_W-1:0]  rs1;             // raw instr[19:15]; uimm[4:0] when csr_imm=1
+    logic [REG_ADDR_W-1:0]  rs2;             // raw instr[24:20]
+    logic                   rs1_re;          // rs1 is an operand -- read/forward/hazard-check it
+    logic                   rs2_re;          // rs2 is an operand
+    logic [REG_ADDR_W-1:0]  rd;              // raw instr[11:7]
+    logic                   rd_we;           // writes rd (x0 writes are discarded downstream, not gated here)
+
+    // -- immediate ---------------------------------------------------------------
+    logic [XLEN-1:0]        imm;             // sign- or zero-extended, format already selected
+
+    // -- ALU / branch / address operand routing (consumed by s1_alu.sv) -----------
+    alu_op_e                alu_op;
+    cmp_op_e                cmp_op;          // CMP_NONE unless is_branch
+    logic                   op1_is_pc;       // ALU operand A is PC, not rs1 (AUIPC, JAL)
+    logic                   op2_is_imm;      // ALU operand B is imm, not rs2
+    logic                   is_branch;
+    logic                   is_jal;
+    logic                   is_jalr;
+
+    // -- load / store / atomic / cache-block (consumed by s1_lsu.sv) ---------------
+    logic                   is_load;
+    logic                   is_store;
+    logic                   is_amo;
+    ls_size_e               mem_size;
+    logic                   mem_signed;
+    amo_op_e                amo_op;
+    logic                   aq;
+    logic                   rl;
+    logic                   is_cbo;          // Zicbom/Zicboz; address = rs1, no offset
+    cbo_op_e                cbo_op;
+
+    // -- multiply / divide --------------------------------------------------------
+    logic                   is_mul;
+    logic                   is_div;
+    muldiv_op_e             muldiv_op;
+
+    // -- CSR (Zicsr), consumed by s1_csr.sv -----------------------------------------
+    logic                   is_csr;
+    csr_op_e                csr_op;
+    logic                   csr_imm;         // operand is uimm[4:0] (rs1 field), not rs1
+    logic [11:0]            csr_addr;
+
+    // -- system / privileged / Zifencei ---------------------------------------------
+    sys_op_e                sys_op;
+
+    // -- bookkeeping, carried through to the completion buffer (SPEC 9.1) -----------
+    logic [XLEN-1:0]        pc;
+    logic [ILEN-1:0]        instr;
+  } decoded_op_t;
+
+  // ---------------------------------------------------------------------------
   // Completion buffer entry (SPEC 9.1)
   //
   // `norollback` is 1 for every main-pipe instruction and is driven by the

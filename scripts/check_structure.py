@@ -48,7 +48,11 @@ README_DIRS = [
 
 MODULE_PREFIXES = ("s1_", "meds_s1_", "meds_v_", "tb_")
 MAX_LINES = 800
-SIZE_WAIVER = {"scripts/gen_project_catalogue.py", "scripts/gen_diagrams.py"}
+SIZE_WAIVER = {"scripts/gen_project_catalogue.py", "scripts/gen_diagrams.py",
+               "verif/unit/tb_s1_decode.sv",  # Comprehensive instruction decoder testbench: exhaustively tests 96 named instructions
+                                              # (37 RV64I + 12 RV64I+ + 13 RVM + 11 RV64A + 14 SYSTEM + 9 pseudo-instructions) across
+                                              # all RV64IMAC extensions plus reserved encodings and both MXIF_EN configs; splitting would fragment test logic (R-C6)
+               }
 
 REQUIRED_CONFIG_KEYS = {"name", "isa", "privilege", "backbone", "memory_map"}
 
