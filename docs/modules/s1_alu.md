@@ -3,8 +3,7 @@
 | | |
 |---|---|
 | **Status** | COMPLETE — REFERENCE (the house-style example to copy) |
-| **Owner** | @umershahidengr |
-| **Backup** | _(assign at Phase-0 review)_ |
+| **Authorship** | see the file header (`Author(s)` / `Modified By`) — CODING_STANDARD.md §5 |
 | **Project** | T-02 (core backend), tested by M-06 |
 | **Spec** | SPEC §7.3, §8.1 |
 | **Source** | `rtl/core/s1_alu.sv` |

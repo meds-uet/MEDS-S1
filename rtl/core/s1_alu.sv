@@ -1,10 +1,14 @@
+// =============================================================================
 // Copyright 2026 Maktab-e-Digital Systems Lahore.
 // Licensed under the Apache License, Version 2.0, see LICENSE file for details.
 // SPDX-License-Identifier: Apache-2.0
 //
-// =============================================================================
-// s1_alu : integer ALU and branch comparator          [COMPLETE -- REFERENCE]
+// Author(s)    : Umer Shahid (umer.shahid@10xengineers.ai) (Aug 2026)
+// Modified By  :
 //
+//
+// s1_alu : integer ALU and branch comparator          [COMPLETE -- REFERENCE]
+// Description  :
 // This module is the house-style worked reference.  It is small enough to read
 // in one sitting and it demonstrates every convention the coding standard asks
 // for.  Copy its shape, not its contents:

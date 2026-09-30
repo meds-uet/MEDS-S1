@@ -153,9 +153,9 @@ Two traps when editing `verif/verilator.vlt`:
 | ID | Rule | |
 |---|---|---|
 | **R-D1** | Every source directory has a `README.md` saying what lives there, what does not, and how to add something. | **[auto]** |
-| **R-D2** | Every `.sv` and `.py` file carries the SPDX header. | **[auto]** |
+| **R-D2** | Every `.sv` and `.py` file carries the SPDX header, with `Author(s)` and `Modified By` fields (below). | **[auto]** |
 | **R-D3** | Every RTL module has a page in `docs/modules/` following `TEMPLATE.md`, merged with the module (NFR-7). | **[auto: presence]** |
-| **R-D4** | A module header states what it does, its status tag, and where its contract is specified. | |
+| **R-D4** | A module header states who wrote and last touched it, what it does, its status tag, and where its contract is specified. | |
 | **R-D5** | Comments explain *why*, not *what*. `// increment counter` above `count_d = count_q + 1` is noise; `// saturates rather than wrapping, because the PLIC treats 0 as no-interrupt` is not. | |
 
 Status tags in module headers, so a reader can tell finished from stub at a glance:
@@ -166,6 +166,35 @@ Status tags in module headers, so a reader can tell finished from stub at a glan
 [SKELETON -- <project>] ports and structure only; named project will implement it
 [WIP -- <project>]      under active development, not yet verified
 ```
+
+### The file header template
+
+Every `.sv` file opens with this shape. `rtl/core/s1_alu.sv` is the worked example — copy its
+header verbatim and edit the fields.
+
+```systemverilog
+// =============================================================================
+// Copyright 2026 Maktab-e-Digital Systems Lahore.
+// Licensed under the Apache License, Version 2.0, see LICENSE file for details.
+// SPDX-License-Identifier: Apache-2.0
+//
+// Author(s)    : Full Name (email) (Mon Year)
+// Modified By  : Full Name (email) (Mon Year) -- one-line reason for the change
+//
+// <module_name> : <one-line purpose>                   [<STATUS TAG>]
+// Description  :
+// What it does and why it exists as a separate module.  Whatever a reader
+// needs before the port list makes sense.
+//
+// Reference: SPEC section x.y.  Testbench: verif/unit/tb_<module_name>.sv.
+// =============================================================================
+```
+
+- **`Author(s)`** is whoever wrote the file originally. Never edited after the fact.
+- **`Modified By`** gets one new line per contributor who substantively changes the file after
+  that — append, don't overwrite the ones already there, so the header reads as a log. A typo fix
+  or a rebase doesn't count; a behavioural or interface change does.
+- This is now the single source of truth for who wrote and last touched a file.
 
 ---
 

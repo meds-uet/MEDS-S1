@@ -1,10 +1,13 @@
+// =============================================================================
 // Copyright 2026 Maktab-e-Digital Systems Lahore.
 // Licensed under the Apache License, Version 2.0, see LICENSE file for details.
 // SPDX-License-Identifier: Apache-2.0
 //
-// =============================================================================
-// s1_pkg : MEDS-S1 core parameters and shared types                [COMPLETE]
+// Author(s)    : Umer Shahid (umer.shahid@10xengineers.ai) (Aug 2026)
+// Modified By  :
 //
+// s1_pkg : MEDS-S1 core parameters and shared types                [COMPLETE]
+// Description  :
 // Every type the core passes between modules lives here.  Nothing in rtl/core/
 // declares a struct of its own -- if two modules need to agree on a shape, that
 // shape belongs in this file.

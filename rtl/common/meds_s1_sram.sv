@@ -1,10 +1,13 @@
+// =============================================================================
 // Copyright 2026 Maktab-e-Digital Systems Lahore.
 // Licensed under the Apache License, Version 2.0, see LICENSE file for details.
 // SPDX-License-Identifier: Apache-2.0
 //
-// =============================================================================
-// meds_s1_sram : the single-port SRAM wrapper                       [COMPLETE]
+// Author(s)    : Umer Shahid (umer.shahid@10xengineers.ai) (Aug 2026)
+// Modified By  :
 //
+// meds_s1_sram : the single-port SRAM wrapper                       [COMPLETE]
+// Description  :
 // NORMATIVE (INTERFACES.md section 8, SPEC section 17):
 //
 //   No memory anywhere in MEDS-S1 may be inferred directly.  Every array --
