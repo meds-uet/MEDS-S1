@@ -22,6 +22,7 @@ Status tags follow CODING_STANDARD.md §5. This table is the fastest way to see 
 | `s1_alu.sv` | **COMPLETE — REFERENCE** | T-02 | `tb_s1_alu` (4206 checks) | [page](../../docs/modules/s1_alu.md) |
 | `s1_fetch.sv` | TODO | T-01 | | |
 | `s1_decode.sv` | TODO | T-02 | | |
+| `s1_execute.sv` | WIP — unit-verified, needs `decoded_op_t` (#4) | T-02 | `tb_s1_execute` (594322 checks) | [page](../../docs/modules/s1_execute.md) |
 | `s1_regfile.sv` | TODO | T-02 | | |
 | `s1_csr.sv` | TODO | T-03 | | |
 | `s1_completion_buffer.sv` | TODO | **R-01 (critical path)** | | |
