@@ -46,6 +46,7 @@ help:
 	@echo "    check          repository conventions (structure + docs gates)"
 	@echo "    lint           lint and elaborate CONFIG=$(CONFIG)"
 	@echo "    test-unit      run unit testbenches      [TB=<name> for one]"
+	@echo "    bench          run CoreMark + Dhrystone [CONFIG=$(CONFIG)]"
 	@echo "    ci             everything the PR gate runs"
 	@echo
 	@echo "  Documentation"
@@ -60,7 +61,6 @@ help:
 	@echo "    run            run PROG on BOARD        (T-06 / R-06)"
 	@echo "    cosim          Spike co-simulation      (R-05)"
 	@echo "    riscof         ACT / architectural tests(M-11 / T-07)"
-	@echo "    bench          benchmark suite          (M-07 / M-08)"
 	@echo "    formal         riscv-formal             (R-01 / T-07)"
 	@echo "    synth          FPGA synthesis           (T-08)"
 	@echo
@@ -187,7 +187,7 @@ riscof:
 	$(call NOT_YET,riscof,M-11 / T-07 (ACT in CI),docs/guidelines/VERIFICATION_GUIDE.md section 6)
 
 bench:
-	$(call NOT_YET,bench,M-07 / M-08 (benchmark suites),sw/apps/README.md)
+	@$(PY) $(SCRIPTS)/run_ci.py --configuration $(CONFIG)
 
 bench-compare:
 	$(call NOT_YET,bench-compare,M-07 (benchmark harness),SPEC NFR-10)

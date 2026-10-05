@@ -9,6 +9,9 @@ Application code (`sw/apps/`), accelerator drivers (`sw/drivers/`).
 ## How to add something
 One header and one .c per peripheral, named after it. Every HAL function is documented where it is declared.
 
+## M-07 benchmark runtime
+M-07 currently uses `crt0.S` and `syscalls.c` here for its temporary benchmark runtime until the T-06 BSP implementation is available. These files are intended to be replaced or adapted when T-06 is integrated, maintaining one shared BSP implementation rather than separate benchmark-specific startup files.
+
 ## Catalogue projects that land here
 T-06 BSP · M-09 libs1_perf · M-04 boot ROM
 

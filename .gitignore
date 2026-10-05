@@ -1,5 +1,11 @@
 # Build output
 build/
+/sw/apps/results-ci/*.json
+/sw/apps/results-ci/*.md
+!/sw/apps/results-ci/README.md
+/sw/apps/results-ci-demo/*.json
+/sw/apps/results-ci-demo/*.md
+/sw/apps/results-history.json
 obj_dir/
 *.o
 *.a
