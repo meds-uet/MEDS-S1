@@ -3,12 +3,12 @@
 | | |
 |---|---|
 | **Status** | COMPLETE (behavioural); FPGA and ASIC variants TODO |
-| **Owner** | _(assign at Phase-0 review)_ |
+| **Owner** | @MuhammadUsman0001 |
 | **Backup** | _(assign)_ |
 | **Project** | R-03 (caches, Zicbom and the SRAM wrapper) |
 | **Spec** | SPEC §17, `specs/INTERFACES.md` §8, ADR-0005 |
 | **Source** | `rtl/common/meds_s1_sram.sv` |
-| **Testbench** | TODO — R-03 |
+| **Testbench** | `verif/unit/tb_meds_s1_sram.sv` — 30 checks |
 
 ## Purpose
 
@@ -58,7 +58,7 @@ synthesising the behavioural model into a bitstream.
 | Layer | Status | Where |
 |---|---|---|
 | Lint | clean | `make lint` |
-| Unit test | **TODO — R-03** | `verif/unit/tb_meds_s1_sram.sv` |
+| Unit test | **30 checks, all passing** | `verif/unit/tb_meds_s1_sram.sv` |
 | Formal | not yet | |
 
 ## Known limitations
