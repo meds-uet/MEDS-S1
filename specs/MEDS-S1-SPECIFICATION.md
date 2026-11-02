@@ -9,7 +9,7 @@ Maktab-e-Digital Systems (MEDS), UET Lahore · Apache-2.0
 | **Date** | 2026-08-03 |
 | **Architect** | Umer Shahid |
 | **Status** | Pre-RTL. Freeze target: end of Phase 0 |
-| **Companions** | `INTERFACES.md` (normative), `SCOPE_CONTRACT.md` (v1.0 boundary), `../ADDENDUM.md` (rationale), `../EXECUTION_PLAN.md`, `../GITHUB_WORKFLOW.md` |
+| **Companions** | `INTERFACES.md` (normative), `SCOPE_CONTRACT.md` (v1.0 boundary), `../ADDENDUM.md` (rationale), `../GITHUB_WORKFLOW.md` |
 
 ---
 

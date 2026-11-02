@@ -7,7 +7,7 @@ rotating team of part-time contributors produce a coherent platform.**
 |---|---|
 | **Version** | 0.1 — DRAFT |
 | **Date** | 2026-08-03 |
-| **Companions** | `EXECUTION_PLAN.md`, `specs/MEDS-S1-SPECIFICATION.md` |
+| **Companions** | `specs/MEDS-S1-SPECIFICATION.md` |
 
 ---
 
@@ -38,7 +38,7 @@ github.com/meds-uet/
 
 One CI run must be able to prove that the core, fabric, generator, BSP and boards all work
 *together*. Splitting them across repos makes that impossible without a fragile cross-repo pipeline —
-and the failure mode (six green repos and a broken platform) is exactly C3 in the execution plan.
+and the failure mode is six green repos and a broken platform.
 
 Accelerators live outside because they have independent lifecycles, different authors, and sometimes
 publication embargoes.
@@ -147,8 +147,8 @@ gitGraph
 
 | Rule | Value |
 |---|---|
-| Branch naming | `wp<N>/<short-description>` — e.g. `wp5/completion-buffer` |
-| Branch lifetime | **≤ 2 weeks.** Longer means the task was mis-sized (execution plan §4.2) |
+| Branch naming | `wp<N>/<short-description>` — e.g. `wp5/completion-buffer`. WPs are listed in [`PROJECTS.md`](PROJECTS.md#work-packages) |
+| Branch lifetime | **≤ 2 weeks.** Longer means the task was mis-sized (the ≤ 20 h rule, §6.1) |
 | Merge strategy | **Squash merge.** One issue = one commit on `main` |
 | Rebase vs merge | Rebase onto `main` before merging; no merge commits from `main` into branches |
 | Force push | Allowed on your own branch, never on `main` |
@@ -220,7 +220,7 @@ platform.lock               @meds-uet/tech-lead
 
 **`INTERFACES.md`, `/rtl/core/cb/`, `/rtl/socket/`, `/verif/conformance/` and `REGISTRY.md` are the
 frozen surfaces.** They require an architect's review because changing them breaks every attached
-accelerator. This file is where the T3 tier from the execution plan becomes enforceable.
+accelerator. This file is where the T3 tier (`docs/guidelines/ONBOARDING.md`) becomes enforceable.
 
 ---
 
@@ -266,7 +266,7 @@ arrives to an empty queue loses their first week and often does not come back.
 
 ### 6.3 Milestones
 
-One per phase, matching `EXECUTION_PLAN.md` §5:
+One per phase:
 
 `Phase 0 — Foundations` · `Phase 1 — Core` · `Phase 2 — SoC in simulation` ·
 `Phase 3 — Real hardware` · `Phase 4 — Extensibility` · `Phase 5 — Linux`
@@ -290,7 +290,7 @@ One org-level Project, board + table views.
 | Tier | single-select T0–T3 | matches tasks to people |
 | Estimate (h) | number | enforces the ≤20 h rule |
 | Owner | person | |
-| Backup | person | continuity (execution plan §12) |
+| Backup | person | continuity — every owner has a named backup |
 | Phase | single-select | |
 | Blocked by | text | surfaces the critical path |
 
@@ -440,7 +440,7 @@ RTL and wrong in the device tree — the bug class that costs a week and teaches
 
 ### 9.3 Self-hosted runner
 
-Required for Vivado (execution plan R7, R12) and for keeping the PR gate under 20 minutes.
+Required for Vivado and for keeping the PR gate under 20 minutes.
 
 | Item | Spec | Note |
 |---|---|---|
@@ -551,7 +551,7 @@ sockets:
 
 Chat (Slack/WhatsApp) is for coordination only. **Any decision made in chat is written into an issue
 or a doc the same day, or it did not happen.** This is the single rule that most protects against
-C1 (contributors rotate) — a decision that lives only in a chat scrollback is lost the moment the
+contributor turnover — a decision that lives only in a chat scrollback is lost the moment the
 people in that chat graduate.
 
 ---

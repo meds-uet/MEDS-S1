@@ -45,7 +45,7 @@ body:
   - type: checkboxes
     id: dod
     attributes:
-      label: Definition of done (EXECUTION_PLAN §8)
+      label: Definition of done
       options:
         - {label: Design note reviewed before implementation}
         - {label: RTL merged, lint clean}
