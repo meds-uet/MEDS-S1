@@ -143,6 +143,12 @@ None. Illegality is reported in `decoded_o.illegal`; the trap is raised downstre
   coprocessor; the decoder only routes encodings it does not recognise.
 - **Encodings longer than 32 bits** (`instr_i[4:2] = 111`) are treated as unrecognised and become
   MXIF candidates when `MXIF_EN=1`.
+- **MXIF candidates over-report register use.** Every MXIF candidate has `rs1_re`, `rs2_re` and
+  `rd_we` set, because the decoder cannot know which registers a coprocessor instruction uses. The
+  hazard logic therefore stalls each one on RAW hazards against `rs1`, `rs2` and `rd` even when the
+  instruction ignores them. This costs nothing with `MXIF_EN=0`, which produces no candidates. With a
+  coprocessor attached, the cost is stalls on unrelated hazards until the decoder is given the
+  coprocessor's real operand use.
 
 ## Open questions
 
