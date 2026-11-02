@@ -87,7 +87,7 @@ check-tools:
 	echo "Verification (R-05, M-11, T-07):"; \
 	opt spike                      "co-simulation reference"; \
 	opt riscof                     "architectural tests"; \
-	opt sail                       "ACT golden reference"; \
+	opt sail_riscv_sim             "ACT golden reference (sail-riscv)"; \
 	echo "Documentation:"; \
 	opt pandoc                     "specification PDF"; \
 	opt google-chrome              "PDF rendering"; \
