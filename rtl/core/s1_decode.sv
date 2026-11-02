@@ -409,24 +409,12 @@ module s1_decode
       OP_SYSTEM: begin
         decoded_o.unit = UNIT_NONE;
         if (funct3 == 3'b000) begin
-          if (funct7 == 7'b0001001) begin
-            // SFENCE.VMA rs1=vaddr, rs2=asid (real operands -- not part of a
-            // fixed 12-bit pattern the way ECALL/EBREAK/MRET/SRET/WFI are).
-            // Only rd is architecturally required to be 0.
-            if (rd_f == '0) begin
-              decoded_o.sys_op  = SYS_SFENCE_VMA;
-              decoded_o.rs1_re  = 1'b1;
-              decoded_o.rs2_re  = 1'b1;
-              decoded_o.illegal = 1'b0;
-            end
-          end else if (rs1_f == '0 && rd_f == '0) begin
+          if (rs1_f == '0 && rd_f == '0) begin
             unique case (instr_i[31:20])
               12'h000: begin decoded_o.sys_op = SYS_ECALL;  decoded_o.illegal = 1'b0; end
               12'h001: begin decoded_o.sys_op = SYS_EBREAK; decoded_o.illegal = 1'b0; end
-              12'h102: begin decoded_o.sys_op = SYS_SRET;   decoded_o.illegal = 1'b0; end  // legality checked at retire, SPEC 10.1
               12'h302: begin decoded_o.sys_op = SYS_MRET;   decoded_o.illegal = 1'b0; end
               12'h105: begin decoded_o.sys_op = SYS_WFI;    decoded_o.illegal = 1'b0; end
-              12'h7b2: begin decoded_o.sys_op = SYS_DRET;   decoded_o.illegal = 1'b0; end  // Debug spec; legality (must be in Debug Mode) checked at retire, SPEC 13
               default: ;  // unrecognised
             endcase
           end

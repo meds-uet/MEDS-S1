@@ -8,7 +8,7 @@
 | **Project** | T-02 |
 | **Spec** | SPEC §7.1, §7.2, §9.2; INTERFACES.md §1.8 |
 | **Source** | `rtl/core/s1_decode.sv` |
-| **Testbench** | `verif/unit/tb_s1_decode.sv` — 540 checks |
+| **Testbench** | `verif/unit/tb_s1_decode.sv` — 573 checks |
 
 ## Purpose
 
@@ -74,8 +74,7 @@ Anything not listed here is unrecognised.
 | `AMO` | LR SC AMOSWAP AMOADD AMOXOR AMOAND AMOOR AMOMIN AMOMAX AMOMINU AMOMAXU (.W, .D) | LSU | `funct3` ∈ {010, 011}; `funct7[6:2]` a defined op; LR: `rs2 = 0` |
 | `MISC-MEM` | FENCE FENCE.I | NONE | `funct3` ∈ {000, 001}; `rs1`, `rd` and the other immediate bits are ignored |
 | `MISC-MEM` | CBO.INVAL CBO.CLEAN CBO.FLUSH CBO.ZERO | LSU | `funct3 = 010`, `rd = 0`, `instr[31:20]` ∈ {0, 1, 2, 4} |
-| `SYSTEM` | ECALL EBREAK SRET MRET WFI DRET | NONE | `funct3 = 000`, `rs1 = rd = 0`, `instr[31:20]` an exact match |
-| `SYSTEM` | SFENCE.VMA | NONE | `funct3 = 000`, `funct7 = 0001001`, `rd = 0` |
+| `SYSTEM` | ECALL EBREAK MRET WFI | NONE | `funct3 = 000`, `rs1 = rd = 0`, `instr[31:20]` an exact match |
 | `SYSTEM` | CSRRW CSRRS CSRRC CSRRWI CSRRSI CSRRCI | CSR | `funct3[1:0] != 00` |
 
 ### Operand routing
@@ -94,8 +93,7 @@ Anything not listed here is unrecognised.
 | LR | 1 | 0 | 1 | 0 | 0 | — |
 | SC, AMO* | 1 | 1 | 1 | 0 | 0 | — |
 | CBO.* | 1 | 0 | 0 | 0 | 0 | — |
-| FENCE, FENCE.I, ECALL, EBREAK, xRET, WFI | 0 | 0 | 0 | 0 | 0 | — |
-| SFENCE.VMA | 1 | 1 | 0 | 0 | 0 | — |
+| FENCE, FENCE.I, ECALL, EBREAK, MRET, WFI | 0 | 0 | 0 | 0 | 0 | — |
 | CSRR{W,S,C} | 1 | 0 | 1 | 0 | 0 | — |
 | CSRR{W,S,C}I (`csr_imm`) | 0 | 0 | 1 | 0 | 0 | `uimm` |
 | MXIF candidate | 1 | 1 | 1 | 0 | 0 | — |
@@ -126,16 +124,21 @@ None. Illegality is reported in `decoded_o.illegal`; the trap is raised downstre
 | Layer | Status | Where |
 |---|---|---|
 | Lint | clean on all four configs | `make lint CONFIG=<name>` |
-| Unit test | **540 checks** — every instruction in the table above, 9 pseudo-instructions, reserved-encoding spot checks under both `MXIF_EN` values, compressed-encoding guard | `make test-unit TB=s1_decode` |
+| Unit test | **573 checks** — every instruction in the table above, 9 pseudo-instructions, reserved-encoding spot checks under both `MXIF_EN` values, compressed-encoding guard | `make test-unit TB=s1_decode` |
 | Co-simulation | not yet | |
 | Formal | not yet | |
 
 ## Known limitations
 
 - **No per-config ISA gating.** The decoder accepts the union of all configs' ISAs (SPEC §5.3):
-  A, Zicsr, Zifencei, Zicbom, Zicboz, SRET, SFENCE.VMA and DRET are recognised on every config,
-  including those whose ISA string or privilege set excludes them. `MXIF_EN` is the only
-  configuration input.
+  A, Zicsr, Zifencei, Zicbom and Zicboz are recognised on every config, including those whose
+  ISA string excludes them. `MXIF_EN` is the only configuration input.
+- **SRET, DRET and SFENCE.VMA are not decoded.** The core is M+U only (`misa.S` reads 0, SPEC
+  §10.1) and has no Debug Mode yet, so they are unrecognised encodings like any other. They cannot
+  be decoded without a privilege check, and nothing downstream performs one at retire. They return
+  with S-mode and the debug module, gated on the privilege or Debug state.
+- **MRET is decoded in every privilege level.** The decoder has no privilege input; EX must raise
+  illegal-instruction for MRET when `priv_i != PRIV_M`.
 - **No opcode routing from `soc.yaml`.** SPEC §7.2 allows `soc.yaml` to route opcodes to the
   coprocessor; the decoder only routes encodings it does not recognise.
 - **Encodings longer than 32 bits** (`instr_i[4:2] = 111`) are treated as unrecognised and become

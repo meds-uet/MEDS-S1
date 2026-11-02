@@ -13,9 +13,10 @@
 
   task automatic test_system();
     // ==========================================================================
-    // MISC-MEM / SYSTEM -- 19 instructions: fence, fence.i, cbo.inval/clean/
-    // flush/zero, ecall, ebreak, sret, mret, wfi, dret, sfence.vma,
-    // csrrw/rs/rc, csrrwi/rsi/rci.
+    // MISC-MEM / SYSTEM -- 16 instructions: fence, fence.i, cbo.inval/clean/
+    // flush/zero, ecall, ebreak, mret, wfi, csrrw/rs/rc, csrrwi/rsi/rci.
+    // sret, dret and sfence.vma are NOT decoded (M+U core, no Debug Mode) and
+    // are tested below as unrecognised.
     // ==========================================================================
 
     cur_test = "fence"; named("fence");
@@ -83,9 +84,13 @@
     instr = enc_sys12(12'h001, 5'd0, 5'd0); #1;
     check_field("sys_op", dec_mxif_on.sys_op, SYS_EBREAK);
 
-    cur_test = "sret"; named("sret");
+    cur_test = "sret/unrecognised";
+    // M+U core: SRET must not decode, or U-mode could execute it (it would
+    // retire as MRET).
     instr = enc_sys12(12'h102, 5'd0, 5'd0); #1;
-    check_field("sys_op", dec_mxif_on.sys_op, SYS_SRET);
+    expect_unrecognised();
+    check_field("on.sys_op",  dec_mxif_on.sys_op,  SYS_NONE);
+    check_field("off.sys_op", dec_mxif_off.sys_op, SYS_NONE);
 
     cur_test = "mret"; named("mret");
     instr = enc_sys12(12'h302, 5'd0, 5'd0); #1;
@@ -95,13 +100,13 @@
     instr = enc_sys12(12'h105, 5'd0, 5'd0); #1;
     check_field("sys_op", dec_mxif_on.sys_op, SYS_WFI);
 
-    cur_test = "dret"; named("dret");
+    cur_test = "dret/unrecognised";
     // riscv-opcodes rv_sdext::dret: "11..7=0 19..15=0 31..20=0x7b2 14..12=0
-    // 6..2=0x1C 1..0=3" -- needed for FR-8 (debug exit); legality (must be in
-    // Debug Mode) is checked at retire, SPEC 13.
+    // 6..2=0x1C 1..0=3".  There is no Debug Mode yet, so DRET must not decode;
     instr = enc_sys12(12'h7b2, 5'd0, 5'd0); #1;
-    check_field("sys_op", dec_mxif_on.sys_op, SYS_DRET);
-    check_field("illegal", dec_mxif_on.illegal, 1'b0);
+    expect_unrecognised();
+    check_field("on.sys_op",  dec_mxif_on.sys_op,  SYS_NONE);
+    check_field("off.sys_op", dec_mxif_off.sys_op, SYS_NONE);
 
     cur_test = "DRET/reserved-rs1-nonzero";
     instr = enc_sys12(12'h7b2, 5'd9, 5'd0); #1;
@@ -122,20 +127,21 @@
     instr = enc_sys12(12'h302, 5'd9, 5'd0); #1;
     expect_unrecognised();
 
-    cur_test = "sfence.vma"; named("sfence.vma");
-    // funct7=0001001, rs1=vaddr, rs2=asid, funct3=000, rd=0 (SPEC 10.1's Sv39
-    // MMU: satp is writable from v1.0 even though translation is bypassed
-    // until Phase 5, so this decode needs to exist now, not later).
+    cur_test = "sfence.vma/unrecognised";
+    // funct7=0001001, rs1=vaddr, rs2=asid, funct3=000, rd=0.  S-mode is absent
+    // (misa.S reads 0, translation bypassed), so SFENCE.VMA must not decode, or
+    // U-mode could execute it.
     instr = enc_r(7'b0001001, 5'd6, 5'd5, 3'b000, 5'd0, OP_SYSTEM); #1;
-    expect_common(UNIT_NONE, 1'b0, 1'b0, 1'b1, 1'b1);
-    check_field("sys_op", dec_mxif_on.sys_op, SYS_SFENCE_VMA);
+    expect_unrecognised();
+    check_field("on.sys_op",  dec_mxif_on.sys_op,  SYS_NONE);
+    check_field("off.sys_op", dec_mxif_off.sys_op, SYS_NONE);
 
-    cur_test = "sfence.vma/rs1=x0-rs2=x0-legal";
-    // "sfence.vma x0, x0" (flush everything) is the common case -- rs1/rs2
-    // being zero must NOT be confused with them being architecturally fixed.
+    cur_test = "sfence.vma/rs1=x0-rs2=x0-unrecognised";
+    // x0, x0 (flush everything) is not a special case.
     instr = enc_r(7'b0001001, 5'd0, 5'd0, 3'b000, 5'd0, OP_SYSTEM); #1;
-    check_field("sys_op", dec_mxif_on.sys_op, SYS_SFENCE_VMA);
-    check_field("illegal", dec_mxif_on.illegal, 1'b0);
+    expect_unrecognised();
+    check_field("on.sys_op",  dec_mxif_on.sys_op,  SYS_NONE);
+    check_field("off.sys_op", dec_mxif_off.sys_op, SYS_NONE);
 
     cur_test = "SFENCEVMA/reserved-rd-nonzero";
     instr = enc_r(7'b0001001, 5'd6, 5'd5, 3'b000, 5'd3, OP_SYSTEM); #1;
