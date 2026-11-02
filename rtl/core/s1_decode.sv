@@ -26,28 +26,6 @@ module s1_decode
   output decoded_op_t     decoded_o
 );
 
-  // ---------------------------------------------------------------------------
-  // Opcode-map constants (RV64IMAC_Zicsr_Zifencei).
-  //
-  // The values live in s1_pkg.sv as OPC_*, where the C expander and fetch also
-  // read them; one copy of the opcode map, per rtl/core/README.md rule 2.  The
-  // local names are aliases so the decode body below reads unchanged.
-  // ---------------------------------------------------------------------------
-  localparam logic [6:0] OP_LOAD     = OPC_LOAD;
-  localparam logic [6:0] OP_MISC_MEM = OPC_MISC_MEM;
-  localparam logic [6:0] OP_IMM      = OPC_OP_IMM;
-  localparam logic [6:0] OP_AUIPC    = OPC_AUIPC;
-  localparam logic [6:0] OP_IMM_32   = OPC_OP_IMM_32;
-  localparam logic [6:0] OP_STORE    = OPC_STORE;
-  localparam logic [6:0] OP_AMO      = OPC_AMO;
-  localparam logic [6:0] OP_OP       = OPC_OP;
-  localparam logic [6:0] OP_LUI      = OPC_LUI;
-  localparam logic [6:0] OP_OP_32    = OPC_OP_32;
-  localparam logic [6:0] OP_BRANCH   = OPC_BRANCH;
-  localparam logic [6:0] OP_JALR     = OPC_JALR;
-  localparam logic [6:0] OP_JAL      = OPC_JAL;
-  localparam logic [6:0] OP_SYSTEM   = OPC_SYSTEM;
-
   // funct7 values that pick a second meaning for an OP/OP-IMM/OP-32 funct3.
   localparam logic [6:0] FUNCT7_ALT     = 7'b010_0000;  // SUB/SRA/SUBW/SRAW
   localparam logic [6:0] FUNCT7_MULDIV  = 7'b000_0001;  // RV64M, in OP and OP-32
@@ -119,7 +97,7 @@ module s1_decode
     unique case (opcode)
 
       // -- OP: register-register ALU, or RV64M when funct7 == FUNCT7_MULDIV --
-      OP_OP: begin
+      OPC_OP: begin
         decoded_o.rs1_re = 1'b1;
         decoded_o.rs2_re = 1'b1;
         decoded_o.rd_we  = 1'b1;
@@ -157,7 +135,7 @@ module s1_decode
       end
 
       // -- OP-32: RV64 word ALU forms, or RV64M word forms -------------------
-      OP_OP_32: begin
+      OPC_OP_32: begin
         decoded_o.rs1_re = 1'b1;
         decoded_o.rs2_re = 1'b1;
         decoded_o.rd_we  = 1'b1;
@@ -189,7 +167,7 @@ module s1_decode
       end
 
       // -- OP-IMM: register-immediate ALU -------------------------------------
-      OP_IMM: begin
+      OPC_OP_IMM: begin
         decoded_o.rs1_re     = 1'b1;
         decoded_o.rd_we      = 1'b1;
         decoded_o.unit       = UNIT_ALU;
@@ -218,7 +196,7 @@ module s1_decode
       end
 
       // -- OP-IMM-32: RV64 word register-immediate ALU ------------------------
-      OP_IMM_32: begin
+      OPC_OP_IMM_32: begin
         decoded_o.rs1_re     = 1'b1;
         decoded_o.rd_we      = 1'b1;
         decoded_o.unit       = UNIT_ALU;
@@ -241,7 +219,7 @@ module s1_decode
       end
 
       // -- LUI: rd = sext(imm_u) ------------------------------------------------
-      OP_LUI: begin
+      OPC_LUI: begin
         decoded_o.rd_we      = 1'b1;
         decoded_o.unit       = UNIT_ALU;
         decoded_o.imm        = imm_u;
@@ -251,7 +229,7 @@ module s1_decode
       end
 
       // -- AUIPC: rd = pc + sext(imm_u) ------------------------------------------
-      OP_AUIPC: begin
+      OPC_AUIPC: begin
         decoded_o.rd_we      = 1'b1;
         decoded_o.unit       = UNIT_ALU;
         decoded_o.imm        = imm_u;
@@ -263,7 +241,7 @@ module s1_decode
 
       // -- JAL: rd = pc+4 (fixed pipeline adder, not this ALU op), target =
       //    pc + sext(imm_j) computed via the same ALU-operand routing AUIPC uses --
-      OP_JAL: begin
+      OPC_JAL: begin
         decoded_o.rd_we      = 1'b1;
         decoded_o.unit       = UNIT_ALU;
         decoded_o.imm        = imm_j;
@@ -275,7 +253,7 @@ module s1_decode
       end
 
       // -- JALR: rd = pc+4, target = rs1 + sext(imm_i), bit 0 cleared by consumer --
-      OP_JALR: begin
+      OPC_JALR: begin
         if (funct3 == 3'b000) begin
           decoded_o.rs1_re     = 1'b1;
           decoded_o.rd_we      = 1'b1;
@@ -289,7 +267,7 @@ module s1_decode
       end
 
       // -- BRANCH: comparator reads rs1/rs2 directly ------------------------------
-      OP_BRANCH: begin
+      OPC_BRANCH: begin
         decoded_o.rs1_re    = 1'b1;
         decoded_o.rs2_re    = 1'b1;
         decoded_o.unit      = UNIT_ALU;
@@ -307,7 +285,7 @@ module s1_decode
       end
 
       // -- LOAD: address = rs1 + sext(imm_i) -------------------------------------
-      OP_LOAD: begin
+      OPC_LOAD: begin
         decoded_o.rs1_re     = 1'b1;
         decoded_o.rd_we      = 1'b1;
         decoded_o.unit       = UNIT_LSU;
@@ -328,7 +306,7 @@ module s1_decode
       end
 
       // -- STORE: address = rs1 + sext(imm_s), data = rs2 -------------------------
-      OP_STORE: begin
+      OPC_STORE: begin
         decoded_o.rs1_re     = 1'b1;
         decoded_o.rs2_re     = 1'b1;
         decoded_o.unit       = UNIT_LSU;
@@ -346,7 +324,7 @@ module s1_decode
       end
 
       // -- AMO: RV64A. Address = rs1 (no offset). LR takes no rs2. -----------------
-      OP_AMO: begin
+      OPC_AMO: begin
         decoded_o.rs1_re = 1'b1;
         decoded_o.rd_we  = 1'b1;
         decoded_o.unit   = UNIT_LSU;
@@ -381,7 +359,7 @@ module s1_decode
       //    fences (riscv-opcodes rv_i::fence, rv_zifencei::fence.i show them
       //    as unconstrained fields, not fixed to 0)
       //    CBO.*: rd IS hard-fixed to 0
-      OP_MISC_MEM: begin
+      OPC_MISC_MEM: begin
         decoded_o.unit = UNIT_NONE;
         unique case (funct3)
           3'b000: begin decoded_o.sys_op = SYS_FENCE;   decoded_o.illegal = 1'b0; end
@@ -406,7 +384,7 @@ module s1_decode
       end
 
       // -- SYSTEM: Zicsr, or funct3==000 privileged instructions --------------------
-      OP_SYSTEM: begin
+      OPC_SYSTEM: begin
         decoded_o.unit = UNIT_NONE;
         if (funct3 == 3'b000) begin
           if (rs1_f == '0 && rd_f == '0) begin
