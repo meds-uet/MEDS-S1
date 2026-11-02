@@ -114,7 +114,7 @@ $style-inline$
     Apache License 2.0 &nbsp;&middot;&nbsp; Pre-RTL. Nothing herein is frozen until the
     Phase&nbsp;0 design review.<br>
     Companion documents: INTERFACES (normative) &middot; SCOPE CONTRACT &middot;
-    EXECUTION PLAN &middot; GITHUB WORKFLOW
+    GITHUB WORKFLOW
   </div>
 </div>
 

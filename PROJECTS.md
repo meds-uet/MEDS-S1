@@ -72,6 +72,38 @@ New here? Read [`docs/guidelines/ONBOARDING.md`](docs/guidelines/ONBOARDING.md) 
 
 ---
 
+## Work packages
+
+The **WP** column above, the `wp<N>/` branch prefix and the project board's *Work package* field all refer to this list. A work package is a slice of the platform with one owner, a written spec, a testbench and a merge gate; the projects above are the pieces of it that one team can finish.
+
+| WP | Scope | Depends on | Phase |
+|---|---|---|---|
+| **WP0** | Specs frozen: `INTERFACES`, `ISA_SPEC`, `SCOPE_CONTRACT`, `CODING_STANDARD` | — | 0 |
+| **WP1** | Repo, CI skeleton, lint, runner box, Verilator flow | — | 0 |
+| **WP2** | Core frontend: PC, BTFN, `fetch_req`/`fetch_rsp`, C-expansion | WP0 | 1 |
+| **WP3** | Core backend: decode, regfile, ALU, forwarding, hazards | WP0 | 1 |
+| **WP4** | CSR file (generated), traps, privilege FSM, perf counters | WP0 | 1 |
+| **WP5** | Completion buffer, retire, MXIF port | WP0, WP3 | 1 |
+| **WP6** | LSU, store buffer, PMP + PMA check unit, AMO/LR-SC | WP0, WP3 | 1–2 |
+| **WP7** | I$ and D$, `Zicbom`, SRAM wrapper | WP6 | 2–3 |
+| **WP8** | AXI fabric, crossbar config, up/downsizers, address decode | WP0 | 2 |
+| **WP9** | Peripherals: CLINT, PLIC, UART, SPI, GPIO, timer | WP8 | 2 |
+| **WP10** | SoC generator: `soc.yaml` → RTL, ld, headers, DTS, docs | WP0, WP8 | 2 |
+| **WP11** | RVFI port + Spike co-simulation harness | WP0 | 1 |
+| **WP12** | RISCOF + arch-tests + Sail in CI | WP1 | 1 |
+| **WP13** | Unit TBs, coverage model, random generator | WP1 | 1+ |
+| **WP14** | BSP: crt0, newlib, HAL, `libs1_perf`, `make run` | WP9 | 2–3 |
+| **WP15** | Debug Module + DTM + OpenOCD + semihosting | WP4, WP5 | 3 |
+| **WP16** | KC705 board port, MIG/DDR, bring-up | WP8, WP10 | 2–3 |
+| **WP17** | Accelerator socket + conformance TBs | WP8 | 3–4 |
+| **WP18** | MEDS-V MXIF adapter + book erratum | WP0, WP5 | 4 |
+| **WP19** | Benchmark + workload suite (Tier A and B) | WP14 | 2–4 |
+| **WP20** | MMU, PTW (2 ports), Sv39, TLB | WP6, WP7 | 5 |
+| **WP21** | OpenSBI + Buildroot Linux | WP20 | 5 |
+| **WP22** | Docs, release engineering, evidence bundle | WP1 | all |
+
+---
+
 ## Reverse index — who works in this directory?
 
 Useful before you change something: these are the people whose work you may collide with.
@@ -121,7 +153,7 @@ Useful before you change something: these are the people whose work you may coll
 
 ## Definition of done — every project
 
-From [`EXECUTION_PLAN.md`](EXECUTION_PLAN.md) §8. A work package is not done because the RTL exists:
+A work package is not done because the RTL exists:
 
 - ☐ Spec or design note reviewed **before** implementation
 - ☐ Code merged, lint clean, no unjustified waivers
