@@ -187,7 +187,7 @@ Full detail in [`VERIFICATION_GUIDE.md`](VERIFICATION_GUIDE.md). The rules the c
 
 | ID | Rule |
 |---|---|
-| **R-G1** | Branch `wp<N>/<short-description>` or `<project-id>/<short-description>`, e.g. `m-01/uart-wrapper`. |
+| **R-G1** | Branch `wp<N>/<short-description>` or `<project-id>/<short-description>`, e.g. `m-01/uart-wrapper`. WP numbers are defined in [`PROJECTS.md`](../../PROJECTS.md#work-packages). |
 | **R-G2** | Branches live ≤ 2 weeks. Longer means the task was mis-sized. |
 | **R-G3** | Commit subject: `<project-id>: <imperative summary>`; body explains why; footer `Closes #NNN`. |
 | **R-G4** | Squash merge. One issue, one commit on `main`. |

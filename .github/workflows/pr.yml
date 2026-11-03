@@ -11,7 +11,7 @@
 #   cosim     (Spike over RVFI)       enable in R-05         -> drop `if: false`
 #   bench     (CoreMark, Embench)     enable in M-07 / M-08  -> drop `if: false`
 #
-# Until the self-hosted runner is racked (EXECUTION_PLAN R7) these run on
+# Until the self-hosted runner is racked, these run on
 # GitHub-hosted runners.  Swap `runs-on` to [self-hosted, meds-ci] then.
 
 name: PR

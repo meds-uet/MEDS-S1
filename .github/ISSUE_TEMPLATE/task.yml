@@ -6,8 +6,7 @@ body:
     attributes:
       value: |
         A task must fit in **≤ 20 hours** and be describable in one issue.
-        If it cannot, it is a work package and needs decomposing
-        (EXECUTION_PLAN.md §4.2).
+        If it cannot, it is a work package and needs decomposing.
   - type: input
     id: project
     attributes: {label: Catalogue project, placeholder: "M-01, or 'none'"}
