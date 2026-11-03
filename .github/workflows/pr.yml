@@ -75,6 +75,7 @@ jobs:
         run: |
           curl -fsSL -o verible.tar.gz \
             "https://github.com/chipsalliance/verible/releases/download/${VERIBLE_VERSION}/verible-${VERIBLE_VERSION}-linux-static-x86_64.tar.gz"
+          sha256sum -c ci/verible.sha256
           mkdir -p "$HOME/verible"
           tar -xzf verible.tar.gz -C "$HOME/verible" --strip-components=1
           echo "$HOME/verible/bin" >> "$GITHUB_PATH"

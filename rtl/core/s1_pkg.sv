@@ -17,16 +17,16 @@ package s1_pkg;
   // ---------------------------------------------------------------------------
   // Global parameters
   // ---------------------------------------------------------------------------
-  parameter int unsigned XLEN = 64;
-  parameter int unsigned ILEN = 32;
-  parameter int unsigned PLEN = 40;  // physical address width
+  parameter int unsigned XLEN      = 64;
+  parameter int unsigned ILEN      = 32;
+  parameter int unsigned PLEN      = 40;   // physical address width
   parameter int unsigned REG_ADDR_W = 5;
 
-  parameter int unsigned CB_DEPTH = 8;  // completion buffer entries (SPEC 9.3)
-  parameter int unsigned CB_IDX_W = $clog2(CB_DEPTH);
-  parameter int unsigned MXIF_ID_W = 4;  // INTERFACES.md 1.3
+  parameter int unsigned CB_DEPTH  = 8;    // completion buffer entries (SPEC 9.3)
+  parameter int unsigned CB_IDX_W  = $clog2(CB_DEPTH);
+  parameter int unsigned MXIF_ID_W = 4;    // INTERFACES.md 1.3
 
-  parameter int unsigned PMP_N = 16;
+  parameter int unsigned PMP_N     = 16;
 
   // Reset vector.  Overridable per config; the boot ROM lives here.
   parameter logic [XLEN-1:0] BOOT_ADDR = 64'h0000_0000_0000_1000;
@@ -48,46 +48,22 @@ package s1_pkg;
   // than a width flag keeps the decoder flat.
   // ---------------------------------------------------------------------------
   typedef enum logic [4:0] {
-    ALU_ADD,
-    ALU_SUB,
-    ALU_SLL,
-    ALU_SLT,
-    ALU_SLTU,
-    ALU_XOR,
-    ALU_SRL,
-    ALU_SRA,
-    ALU_OR,
-    ALU_AND,
-    ALU_ADDW,
-    ALU_SUBW,
-    ALU_SLLW,
-    ALU_SRLW,
-    ALU_SRAW,
-    ALU_PASS_B  // LUI and friends: forward operand b
+    ALU_ADD, ALU_SUB, ALU_SLL, ALU_SLT, ALU_SLTU,
+    ALU_XOR, ALU_SRL, ALU_SRA, ALU_OR,  ALU_AND,
+    ALU_ADDW, ALU_SUBW, ALU_SLLW, ALU_SRLW, ALU_SRAW,
+    ALU_PASS_B                      // LUI and friends: forward operand b
   } alu_op_e;
 
   // Branch conditions, evaluated by the ALU comparator.
   typedef enum logic [2:0] {
-    CMP_NONE,
-    CMP_EQ,
-    CMP_NE,
-    CMP_LT,
-    CMP_GE,
-    CMP_LTU,
-    CMP_GEU
+    CMP_NONE, CMP_EQ, CMP_NE, CMP_LT, CMP_GE, CMP_LTU, CMP_GEU
   } cmp_op_e;
 
   // ---------------------------------------------------------------------------
   // Where a completed instruction's result came from
   // ---------------------------------------------------------------------------
   typedef enum logic [2:0] {
-    UNIT_ALU,
-    UNIT_LSU,
-    UNIT_MUL,
-    UNIT_DIV,
-    UNIT_CSR,
-    UNIT_MXIF,
-    UNIT_NONE
+    UNIT_ALU, UNIT_LSU, UNIT_MUL, UNIT_DIV, UNIT_CSR, UNIT_MXIF, UNIT_NONE
   } exec_unit_e;
 
   // ---------------------------------------------------------------------------
@@ -98,20 +74,20 @@ package s1_pkg;
   // operation retire while it is still executing (INTERFACES.md R1.9).
   // ---------------------------------------------------------------------------
   typedef struct packed {
-    logic                  valid;
-    logic                  done;
-    logic                  norollback;
-    logic [XLEN-1:0]       pc;
-    logic [ILEN-1:0]       instr;
-    logic [REG_ADDR_W-1:0] rd;
-    logic                  rd_we;
-    logic [XLEN-1:0]       result;
-    logic                  exc;
-    logic [5:0]            exccode;
-    logic [XLEN-1:0]       exctval;
-    logic                  is_mxif;
-    logic [MXIF_ID_W-1:0]  mxif_id;
-    exec_unit_e            unit;
+    logic                   valid;
+    logic                   done;
+    logic                   norollback;
+    logic [XLEN-1:0]        pc;
+    logic [ILEN-1:0]        instr;
+    logic [REG_ADDR_W-1:0]  rd;
+    logic                   rd_we;
+    logic [XLEN-1:0]        result;
+    logic                   exc;
+    logic [5:0]             exccode;
+    logic [XLEN-1:0]        exctval;
+    logic                   is_mxif;
+    logic [MXIF_ID_W-1:0]   mxif_id;
+    exec_unit_e             unit;
   } cb_entry_t;
 
   // ---------------------------------------------------------------------------
@@ -138,32 +114,32 @@ package s1_pkg;
   // Generated into pma_decode.sv from soc.yaml; this is the shape it produces.
   // ---------------------------------------------------------------------------
   typedef struct packed {
-    logic cacheable;
-    logic idempotent;
-    logic strong_order;   // 1 = strongly-ordered I/O, 0 = RVWMO
-    logic atomic_lrsc;
-    logic atomic_amo;
-    logic align_natural;  // 1 = misaligned access faults
+    logic       cacheable;
+    logic       idempotent;
+    logic       strong_order;   // 1 = strongly-ordered I/O, 0 = RVWMO
+    logic       atomic_lrsc;
+    logic       atomic_amo;
+    logic       align_natural;  // 1 = misaligned access faults
   } pma_t;
 
   // ---------------------------------------------------------------------------
   // MEM-REQ protocol payloads (INTERFACES.md section 2)
   // ---------------------------------------------------------------------------
   typedef struct packed {
-    logic [XLEN-1:0]   addr;
-    logic              we;
-    logic [XLEN/8-1:0] be;
-    logic [XLEN-1:0]   wdata;
-    logic [2:0]        size;   // log2 bytes
-    priv_lvl_e         mode;
-    logic [3:0]        id;
+    logic [XLEN-1:0]      addr;
+    logic                 we;
+    logic [XLEN/8-1:0]    be;
+    logic [XLEN-1:0]      wdata;
+    logic [2:0]           size;   // log2 bytes
+    priv_lvl_e            mode;
+    logic [3:0]           id;
   } mem_req_t;
 
   typedef struct packed {
-    logic [3:0]      id;
-    logic [XLEN-1:0] rdata;
-    logic            err;
-    logic [1:0]      errcode;
+    logic [3:0]           id;
+    logic [XLEN-1:0]      rdata;
+    logic                 err;
+    logic [1:0]           errcode;
   } mem_rsp_t;
 
 endpackage

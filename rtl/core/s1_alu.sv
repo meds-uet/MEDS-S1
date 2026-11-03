@@ -21,24 +21,24 @@
 module s1_alu
   import s1_pkg::*;
 #(
-    parameter int unsigned WIDTH = XLEN
+  parameter int unsigned WIDTH = XLEN
 ) (
-    input alu_op_e             op_i,
-    input cmp_op_e             cmp_op_i,
-    input logic    [WIDTH-1:0] a_i,
-    input logic    [WIDTH-1:0] b_i,
+  input  alu_op_e          op_i,
+  input  cmp_op_e          cmp_op_i,
+  input  logic [WIDTH-1:0] a_i,
+  input  logic [WIDTH-1:0] b_i,
 
-    output logic [WIDTH-1:0] result_o,
-    output logic             cmp_result_o
+  output logic [WIDTH-1:0] result_o,
+  output logic             cmp_result_o
 );
 
   // ---------------------------------------------------------------------------
   // Shared adder.  Subtraction is addition of the two's complement; sharing one
   // adder keeps the critical path to a single carry chain rather than two.
   // ---------------------------------------------------------------------------
-  logic             sub;
-  logic [WIDTH-1:0] b_eff;
-  logic [WIDTH-1:0] sum;
+  logic                 sub;
+  logic [WIDTH-1:0]     b_eff;
+  logic [WIDTH-1:0]     sum;
 
   always_comb begin
     unique case (op_i)
@@ -47,7 +47,7 @@ module s1_alu
     endcase
   end
 
-  assign b_eff = sub ? (~b_i + {{WIDTH - 1{1'b0}}, 1'b1}) : b_i;
+  assign b_eff = sub ? (~b_i + {{WIDTH-1{1'b0}}, 1'b1}) : b_i;
   assign sum   = a_i + b_eff;
 
   // ---------------------------------------------------------------------------
@@ -57,7 +57,7 @@ module s1_alu
   logic eq, lt_signed, lt_unsigned;
 
   assign eq          = (a_i == b_i);
-  assign lt_signed   = ($signed(a_i) < $signed(b_i));
+  assign lt_signed   = ($signed(a_i)   < $signed(b_i));
   assign lt_unsigned = ($unsigned(a_i) < $unsigned(b_i));
 
   always_comb begin
@@ -66,12 +66,12 @@ module s1_alu
     // property structural instead of an argument.  CODING_STANDARD.md R-C3.
     cmp_result_o = 1'b0;
     unique case (cmp_op_i)
-      CMP_EQ:   cmp_result_o = eq;
-      CMP_NE:   cmp_result_o = ~eq;
-      CMP_LT:   cmp_result_o = lt_signed;
-      CMP_GE:   cmp_result_o = ~lt_signed;
-      CMP_LTU:  cmp_result_o = lt_unsigned;
-      CMP_GEU:  cmp_result_o = ~lt_unsigned;
+      CMP_EQ:  cmp_result_o = eq;
+      CMP_NE:  cmp_result_o = ~eq;
+      CMP_LT:  cmp_result_o = lt_signed;
+      CMP_GE:  cmp_result_o = ~lt_signed;
+      CMP_LTU: cmp_result_o = lt_unsigned;
+      CMP_GEU: cmp_result_o = ~lt_unsigned;
       CMP_NONE: cmp_result_o = 1'b0;
     endcase
   end
@@ -87,16 +87,16 @@ module s1_alu
   localparam int unsigned SHAMT_W  = $clog2(WIDTH);
   localparam int unsigned SHAMT_WW = 5;
 
-  logic [ SHAMT_W-1:0] shamt;
+  logic [SHAMT_W-1:0]  shamt;
   logic [SHAMT_WW-1:0] shamt_w;
-  logic [        31:0] a_w;
+  logic [31:0]         a_w;
 
   assign shamt   = b_i[SHAMT_W-1:0];
   assign shamt_w = b_i[SHAMT_WW-1:0];
   assign a_w     = a_i[31:0];
 
   logic [WIDTH-1:0] sll_res, srl_res, sra_res;
-  logic [31:0] sllw_res, srlw_res, sraw_res;
+  logic [31:0]      sllw_res, srlw_res, sraw_res;
 
   assign sll_res  = a_i << shamt;
   assign srl_res  = a_i >> shamt;
@@ -111,22 +111,23 @@ module s1_alu
   // reachability.  Both are required -- see CODING_STANDARD.md R-C3.
   // ---------------------------------------------------------------------------
   always_comb begin
-    result_o = sum;  // default: see CODING_STANDARD.md R-C3
+    result_o = sum;                       // default: see CODING_STANDARD.md R-C3
     unique case (op_i)
-      ALU_ADD, ALU_SUB:   result_o = sum;
-      ALU_SLL:            result_o = sll_res;
-      ALU_SLT:            result_o = {{WIDTH - 1{1'b0}}, lt_signed};
-      ALU_SLTU:           result_o = {{WIDTH - 1{1'b0}}, lt_unsigned};
-      ALU_XOR:            result_o = a_i ^ b_i;
-      ALU_SRL:            result_o = srl_res;
-      ALU_SRA:            result_o = sra_res;
-      ALU_OR:             result_o = a_i | b_i;
-      ALU_AND:            result_o = a_i & b_i;
-      ALU_ADDW, ALU_SUBW: result_o = {{WIDTH - 32{sum[31]}}, sum[31:0]};
-      ALU_SLLW:           result_o = {{WIDTH - 32{sllw_res[31]}}, sllw_res};
-      ALU_SRLW:           result_o = {{WIDTH - 32{srlw_res[31]}}, srlw_res};
-      ALU_SRAW:           result_o = {{WIDTH - 32{sraw_res[31]}}, sraw_res};
-      ALU_PASS_B:         result_o = b_i;
+      ALU_ADD, ALU_SUB: result_o = sum;
+      ALU_SLL:          result_o = sll_res;
+      ALU_SLT:          result_o = {{WIDTH-1{1'b0}}, lt_signed};
+      ALU_SLTU:         result_o = {{WIDTH-1{1'b0}}, lt_unsigned};
+      ALU_XOR:          result_o = a_i ^ b_i;
+      ALU_SRL:          result_o = srl_res;
+      ALU_SRA:          result_o = sra_res;
+      ALU_OR:           result_o = a_i | b_i;
+      ALU_AND:          result_o = a_i & b_i;
+      ALU_ADDW,
+      ALU_SUBW:         result_o = {{WIDTH-32{sum[31]}},      sum[31:0]};
+      ALU_SLLW:         result_o = {{WIDTH-32{sllw_res[31]}}, sllw_res};
+      ALU_SRLW:         result_o = {{WIDTH-32{srlw_res[31]}}, srlw_res};
+      ALU_SRAW:         result_o = {{WIDTH-32{sraw_res[31]}}, sraw_res};
+      ALU_PASS_B:       result_o = b_i;
     endcase
   end
 

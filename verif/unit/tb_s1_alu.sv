@@ -24,30 +24,30 @@ module tb_s1_alu
 
   localparam int unsigned W = XLEN;
 
-  alu_op_e op;
-  cmp_op_e cmp_op;
-  logic [W-1:0] a, b;
-  logic        [W-1:0] result;
-  logic                cmp_result;
+  alu_op_e          op;
+  cmp_op_e          cmp_op;
+  logic [W-1:0]     a, b;
+  logic [W-1:0]     result;
+  logic             cmp_result;
 
-  int unsigned         checks = 0;
-  int unsigned         errors = 0;
+  int unsigned checks = 0;
+  int unsigned errors = 0;
 
-  s1_alu #(
-      .WIDTH(W)
-  ) dut (
-      .op_i        (op),
-      .cmp_op_i    (cmp_op),
-      .a_i         (a),
-      .b_i         (b),
-      .result_o    (result),
-      .cmp_result_o(cmp_result)
+  s1_alu #(.WIDTH(W)) dut (
+    .op_i         (op),
+    .cmp_op_i     (cmp_op),
+    .a_i          (a),
+    .b_i          (b),
+    .result_o     (result),
+    .cmp_result_o (cmp_result)
   );
 
   // ---------------------------------------------------------------------------
   // Check helpers
   // ---------------------------------------------------------------------------
-  task automatic check(input string name, input logic [W-1:0] got, input logic [W-1:0] exp);
+  task automatic check(input string name,
+                       input logic [W-1:0] got,
+                       input logic [W-1:0] exp);
     checks++;
     if (got !== exp) begin
       errors++;
@@ -65,10 +65,7 @@ module tb_s1_alu
 
   // Apply an operation and settle combinational logic.
   task automatic apply(input alu_op_e o, input logic [W-1:0] x, input logic [W-1:0] y);
-    op = o;
-    cmp_op = CMP_NONE;
-    a = x;
-    b = y;
+    op = o; cmp_op = CMP_NONE; a = x; b = y;
     #1;
   endtask
 
@@ -76,7 +73,8 @@ module tb_s1_alu
   // Golden model.  Written from the ISA manual, independently of the DUT --
   // if it is a copy of the RTL it proves nothing.
   // ---------------------------------------------------------------------------
-  function automatic logic [W-1:0] golden(input alu_op_e o, input logic [W-1:0] x,
+  function automatic logic [W-1:0] golden(input alu_op_e o,
+                                          input logic [W-1:0] x,
                                           input logic [W-1:0] y);
     logic [31:0] xw, yw, rw;
     xw = x[31:0];
@@ -85,33 +83,18 @@ module tb_s1_alu
       ALU_ADD:    return x + y;
       ALU_SUB:    return x - y;
       ALU_SLL:    return x << y[$clog2(W)-1:0];
-      ALU_SLT:    return {{W - 1{1'b0}}, ($signed(x) < $signed(y))};
-      ALU_SLTU:   return {{W - 1{1'b0}}, ($unsigned(x) < $unsigned(y))};
+      ALU_SLT:    return {{W-1{1'b0}}, ($signed(x)   < $signed(y))};
+      ALU_SLTU:   return {{W-1{1'b0}}, ($unsigned(x) < $unsigned(y))};
       ALU_XOR:    return x ^ y;
       ALU_SRL:    return x >> y[$clog2(W)-1:0];
       ALU_SRA:    return $unsigned($signed(x) >>> y[$clog2(W)-1:0]);
       ALU_OR:     return x | y;
       ALU_AND:    return x & y;
-      ALU_ADDW: begin
-        rw = xw + yw;
-        return {{W - 32{rw[31]}}, rw};
-      end
-      ALU_SUBW: begin
-        rw = xw - yw;
-        return {{W - 32{rw[31]}}, rw};
-      end
-      ALU_SLLW: begin
-        rw = xw << y[4:0];
-        return {{W - 32{rw[31]}}, rw};
-      end
-      ALU_SRLW: begin
-        rw = xw >> y[4:0];
-        return {{W - 32{rw[31]}}, rw};
-      end
-      ALU_SRAW: begin
-        rw = $unsigned($signed(xw) >>> y[4:0]);
-        return {{W - 32{rw[31]}}, rw};
-      end
+      ALU_ADDW:   begin rw = xw + yw;                             return {{W-32{rw[31]}}, rw}; end
+      ALU_SUBW:   begin rw = xw - yw;                             return {{W-32{rw[31]}}, rw}; end
+      ALU_SLLW:   begin rw = xw << y[4:0];                        return {{W-32{rw[31]}}, rw}; end
+      ALU_SRLW:   begin rw = xw >> y[4:0];                        return {{W-32{rw[31]}}, rw}; end
+      ALU_SRAW:   begin rw = $unsigned($signed(xw) >>> y[4:0]);   return {{W-32{rw[31]}}, rw}; end
       ALU_PASS_B: return y;
       default:    return 'x;
     endcase
@@ -120,20 +103,20 @@ module tb_s1_alu
   // ---------------------------------------------------------------------------
   // Stimulus
   // ---------------------------------------------------------------------------
-  logic [W-1:0] corner[];
+  logic [W-1:0] corner [];
 
   initial begin
     $display("=== tb_s1_alu : XLEN=%0d ===", W);
 
     // Corner values, derived from the parameter rather than hard-coded.
-    corner    = new[10];
+    corner = new[10];
     corner[0] = '0;
-    corner[1] = {W{1'b1}};  // -1
-    corner[2] = {1'b0, {W - 1{1'b1}}};  // INT_MAX
-    corner[3] = {1'b1, {W - 1{1'b0}}};  // INT_MIN
+    corner[1] = {W{1'b1}};                      // -1
+    corner[2] = {1'b0, {W-1{1'b1}}};            // INT_MAX
+    corner[3] = {1'b1, {W-1{1'b0}}};            // INT_MIN
     corner[4] = 64'h0000_0000_0000_0001;
-    corner[5] = 64'h0000_0000_7FFF_FFFF;  // 32-bit INT_MAX
-    corner[6] = 64'h0000_0000_8000_0000;  // sign bit of the W forms
+    corner[5] = 64'h0000_0000_7FFF_FFFF;        // 32-bit INT_MAX
+    corner[6] = 64'h0000_0000_8000_0000;        // sign bit of the W forms
     corner[7] = 64'hFFFF_FFFF_8000_0000;
     corner[8] = 64'h0123_4567_89AB_CDEF;
     corner[9] = 64'hDEAD_BEEF_CAFE_BABE;
@@ -173,35 +156,19 @@ module tb_s1_alu
     op = ALU_ADD;
     foreach (corner[i]) begin
       foreach (corner[j]) begin
-        a = corner[i];
-        b = corner[j];
-        cmp_op = CMP_EQ;
-        #1;
-        check1("CMP_EQ", cmp_result, a == b);
-        cmp_op = CMP_NE;
-        #1;
-        check1("CMP_NE", cmp_result, a != b);
-        cmp_op = CMP_LT;
-        #1;
-        check1("CMP_LT", cmp_result, $signed(a) < $signed(b));
-        cmp_op = CMP_GE;
-        #1;
-        check1("CMP_GE", cmp_result, $signed(a) >= $signed(b));
-        cmp_op = CMP_LTU;
-        #1;
-        check1("CMP_LTU", cmp_result, $unsigned(a) < $unsigned(b));
-        cmp_op = CMP_GEU;
-        #1;
-        check1("CMP_GEU", cmp_result, $unsigned(a) >= $unsigned(b));
+        a = corner[i]; b = corner[j];
+        cmp_op = CMP_EQ;  #1; check1("CMP_EQ",  cmp_result, a == b);
+        cmp_op = CMP_NE;  #1; check1("CMP_NE",  cmp_result, a != b);
+        cmp_op = CMP_LT;  #1; check1("CMP_LT",  cmp_result, $signed(a)   <  $signed(b));
+        cmp_op = CMP_GE;  #1; check1("CMP_GE",  cmp_result, $signed(a)   >= $signed(b));
+        cmp_op = CMP_LTU; #1; check1("CMP_LTU", cmp_result, $unsigned(a) <  $unsigned(b));
+        cmp_op = CMP_GEU; #1; check1("CMP_GEU", cmp_result, $unsigned(a) >= $unsigned(b));
       end
     end
 
     // CMP_NONE must be quiet.  If it ever floats, every non-branch instruction
     // becomes a random branch -- a hang, not a wrong answer.
-    cmp_op = CMP_NONE;
-    a = '0;
-    b = '0;
-    #1;
+    cmp_op = CMP_NONE; a = '0; b = '0; #1;
     check1("CMP_NONE is 0", cmp_result, 1'b0);
 
     // --- random ---------------------------------------------------------------

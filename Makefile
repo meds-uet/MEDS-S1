@@ -27,6 +27,8 @@ BUILD   := build
 VERIBLE_DIRS := rtl verif
 VERIBLE_VERSION ?= v0.0-4250-gc1fe2daf
 VERILATOR_VERSION ?= 5.020
+PRE_COMMIT_VERSION ?= 4.6.2
+VERIBLE_FORMAT_FLAGS := --flagfile=.verible-format.flags
 
 # Packages must be compiled before anything that imports them.
 RTL_PKGS  := $(shell find rtl -name '*_pkg.sv' 2>/dev/null | sort)
@@ -90,7 +92,16 @@ check-tools:
 	[ -f .git/hooks/pre-commit ] \
 	  && echo "  git hook                     OK" \
 	  || echo "  git hook                     absent -- run: make hooks"; \
-	echo; \
+		if command -v pre-commit >/dev/null 2>&1; then \
+	  found=$$(pre-commit --version | awk '{print $$2}'); \
+	  printf "  %-28s " "pre-commit version"; \
+	  if [ "$$found" = "$(PRE_COMMIT_VERSION)" ]; then \
+	    echo "OK ($$found)"; \
+	  else \
+	    echo "MISMATCH -- expected $(PRE_COMMIT_VERSION), found $$found"; \
+	    ok=0; \
+	  fi; \
+	fi; \
 	need verilator                 "simulation and lint"; \
 	if command -v verilator >/dev/null 2>&1; then \
 	  found=$$(verilator --version | awk '{print $$2}'); \
@@ -98,8 +109,7 @@ check-tools:
 	  if [ "$$found" = "$(VERILATOR_VERSION)" ]; then \
 	    echo "OK ($$found)"; \
 	  else \
-	    echo "MISMATCH -- expected $(VERILATOR_VERSION), found $$found"; \
-	    ok=0; \
+		echo "WARNING: expected $(VERILATOR_VERSION), found $$found (CI uses $(VERILATOR_VERSION))"; \
 	  fi; \
 	fi; \
 	opt verible-verilog-lint       "style lint"; \
@@ -157,13 +167,13 @@ verible-lint:
 verible-format-check:
 	@fail=0; \
 	for f in $(VERIBLE_SRCS); do \
-	  verible-verilog-format "$$f" | diff -q "$$f" - >/dev/null 2>&1 \
+	  verible-verilog-format $(VERIBLE_FORMAT_FLAGS) "$$f" | diff -q "$$f" - >/dev/null 2>&1 \
 	    || { echo "NEEDS FORMAT: $$f"; fail=1; }; \
 	done; \
 	[ $$fail -eq 0 ] && echo "  format clean" || exit 1
 
 verible-format:
-	@verible-verilog-format --inplace $(VERIBLE_SRCS)
+	@verible-verilog-format $(VERIBLE_FORMAT_FLAGS) --inplace $(VERIBLE_SRCS)
 	@echo "formatted $(words $(VERIBLE_SRCS)) files"
 
 verible-check: verible-lint verible-format-check

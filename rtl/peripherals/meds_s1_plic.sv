@@ -35,26 +35,26 @@
 module meds_s1_plic
   import meds_s1_lite_pkg::*;
 #(
-    // Source 0 is reserved by the specification as "no interrupt" and is never
-    // allocated, so N_SOURCES counts it: 16 means sources 1..15 are usable.  The
-    // value comes from the interrupt allocation in soc.yaml (SPEC section 24).
-    parameter int unsigned N_SOURCES = 16,
-    parameter int unsigned PRIO_W    = 3
+  // Source 0 is reserved by the specification as "no interrupt" and is never
+  // allocated, so N_SOURCES counts it: 16 means sources 1..15 are usable.  The
+  // value comes from the interrupt allocation in soc.yaml (SPEC section 24).
+  parameter int unsigned N_SOURCES = 16,
+  parameter int unsigned PRIO_W    = 3
 ) (
-    input logic clk_i,
-    input logic rst_ni,
+  input  logic                 clk_i,
+  input  logic                 rst_ni,
 
-    // Level-sensitive interrupt lines, synchronous to clk_i.  Any CDC belongs in
-    // the accelerator socket (SPEC section 20.1), never here.  irq_i[0] is tied
-    // off: source 0 does not exist.
-    input logic [N_SOURCES-1:0] irq_i,
+  // Level-sensitive interrupt lines, synchronous to clk_i.  Any CDC belongs in
+  // the accelerator socket (SPEC section 20.1), never here.  irq_i[0] is tied
+  // off: source 0 does not exist.
+  input  logic [N_SOURCES-1:0] irq_i,
 
-    // ---- the frozen I4 bus port.  Do not add signals here. --------------------
-    input  lite_req_t lite_req_i,
-    output lite_rsp_t lite_rsp_o,
+  // ---- the frozen I4 bus port.  Do not add signals here. --------------------
+  input  lite_req_t            lite_req_i,
+  output lite_rsp_t            lite_rsp_o,
 
-    // ---- external interrupt to the core's mip CSR -----------------------------
-    output logic meip_o
+  // ---- external interrupt to the core's mip CSR -----------------------------
+  output logic                 meip_o
 );
 
   // 4 MiB window, from the `plic` region in configs/*.yaml.

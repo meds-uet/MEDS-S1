@@ -56,21 +56,21 @@
 module meds_s1_clint
   import meds_s1_lite_pkg::*;
 (
-    input logic clk_i,
-    input logic rst_ni,
+  input  logic       clk_i,
+  input  logic       rst_ni,
 
-    // Free-running real-time tick, one clk_i cycle wide, generated in board_top
-    // at rtc_hz (SPEC section 25).  mtime counts THIS, never clk_i -- otherwise
-    // every delay loop in the BSP changes meaning when the FPGA frequency does.
-    input logic rtc_tick_i,
+  // Free-running real-time tick, one clk_i cycle wide, generated in board_top
+  // at rtc_hz (SPEC section 25).  mtime counts THIS, never clk_i -- otherwise
+  // every delay loop in the BSP changes meaning when the FPGA frequency does.
+  input  logic       rtc_tick_i,
 
-    // ---- the frozen I4 bus port.  Do not add signals here. --------------------
-    input  lite_req_t lite_req_i,
-    output lite_rsp_t lite_rsp_o,
+  // ---- the frozen I4 bus port.  Do not add signals here. --------------------
+  input  lite_req_t  lite_req_i,
+  output lite_rsp_t  lite_rsp_o,
 
-    // ---- interrupt lines to the core's mip CSR --------------------------------
-    output logic msip_o,
-    output logic mtip_o
+  // ---- interrupt lines to the core's mip CSR --------------------------------
+  output logic       msip_o,
+  output logic       mtip_o
 );
 
   // Window geometry.  64 KiB, from the `clint` region in configs/*.yaml.
@@ -130,6 +130,7 @@ module meds_s1_clint
   assign mtip_o     = 1'b0;
 
   logic unused_ok;
-  assign unused_ok = clk_i | rst_ni | rtc_tick_i | (|lite_req_i) | (ADDR_W != 0) | (REG_DW != 0);
+  assign unused_ok = clk_i | rst_ni | rtc_tick_i | (|lite_req_i)
+                   | (ADDR_W != 0) | (REG_DW != 0);
 
 endmodule
