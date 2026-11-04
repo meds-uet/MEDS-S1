@@ -329,6 +329,10 @@ swapped for another implementation, and grows a port every time the bus gains a 
 is declared once in `rtl/fabric/meds_s1_lite_pkg.sv`; `meds_s1_lite_regif` is the adapter every
 peripheral instantiates behind it, and `meds_s1_clint.sv` is the worked example.
 
+The adapter's register-file side also uses `lite_reg_req_t` and `lite_reg_rsp_t` from that package.
+These packed types use the bus maximum field widths; a configured register file uses the low
+`ADDR_W`, `REG_DW`, and `REG_DW/8` bits, with unused request bits driven low.
+
 **Bandwidth budget** (100 MHz, 256-bit backbone = 3.2 GB/s per master port, memory-limited in
 aggregate). Every accelerator declares its demand here before it is accepted:
 
