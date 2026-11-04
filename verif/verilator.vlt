@@ -40,3 +40,18 @@ lint_off -rule UNUSEDPARAM -file "*meds_s1_lite_pkg.sv"
 // is a permanent property of the interface, not an unfinished skeleton, and it
 // is the reason a PLIC with 15 usable sources is parameterised as 16.
 lint_off -rule UNUSEDSIGNAL -file "*meds_s1_plic.sv" -match "*irq_i*"
+
+// verif/cosim/ -- the whole-core testbench (tb_s1_core) and its CSR stand-in.
+// They declare every port of the DUT and read only the ones they check.
+lint_off -rule UNUSEDSIGNAL -file "*verif/cosim/tb_*.sv"
+
+// The scoreboard counts and compares inside a clocked block, where blocking
+// assignment is the correct idiom, not a race.
+lint_off -rule BLKSEQ -file "*verif/cosim/tb_*.sv"
+
+// The testbench drives reset from an initial block while the DUT uses it
+// asynchronously -- that is what reset looks like from outside the core.
+lint_off -rule SYNCASYNCNET -file "*verif/cosim/tb_*.sv"
+
+// Stimulus and checks deliberately widen narrow fields to XLEN to compare them.
+lint_off -rule WIDTHEXPAND -file "*verif/cosim/tb_*.sv"
