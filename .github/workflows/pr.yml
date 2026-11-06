@@ -27,6 +27,7 @@ concurrency:
 
 env:
   VERILATOR_VERSION: "5.020"
+  VERIBLE_VERSION: "v0.0-4250-gc1fe2daf"
 
 jobs:
   # ---------------------------------------------------------------- always on
@@ -64,6 +65,24 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y verilator
       - name: lint ${{ matrix.config }}
         run: make lint CONFIG=${{ matrix.config }}
+
+  verible:
+    name: verible lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: install verible
+        run: |
+          curl -fsSL -o verible.tar.gz \
+            "https://github.com/chipsalliance/verible/releases/download/${VERIBLE_VERSION}/verible-${VERIBLE_VERSION}-linux-static-x86_64.tar.gz"
+          sha256sum -c ci/verible.sha256
+          mkdir -p "$HOME/verible"
+          tar -xzf verible.tar.gz -C "$HOME/verible" --strip-components=1
+          echo "$HOME/verible/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/verible/bin:$PATH"
+          verible-verilog-lint --version
+      - name: verible lint
+        run: make verible-check
 
   unit:
     name: unit testbenches
@@ -128,7 +147,7 @@ jobs:
   gate:
     name: merge gate
     runs-on: ubuntu-latest
-    needs: [structure, docs, lint, unit]
+    needs: [structure, docs, lint, verible, unit]
     if: always()
     steps:
       - name: fail if any required job failed
@@ -136,6 +155,7 @@ jobs:
           echo "structure: ${{ needs.structure.result }}"
           echo "docs:      ${{ needs.docs.result }}"
           echo "lint:      ${{ needs.lint.result }}"
+          echo "verible:   ${{ needs.verible.result }}"
           echo "unit:      ${{ needs.unit.result }}"
           if [ "${{ contains(needs.*.result, 'failure') }}" = "true" ]; then
             echo "::error::merge gate failed -- nothing merges red"

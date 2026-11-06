@@ -32,15 +32,15 @@ module meds_s1_sram #(
   // derived -- do not override
   parameter int unsigned AW    = (DEPTH <= 1) ? 1 : $clog2(DEPTH)
 ) (
-  input  logic            clk_i,
-  input  logic            rst_ni,
+  input logic clk_i,
+  input logic rst_ni,
 
   input  logic            req_i,
   input  logic            we_i,
-  input  logic [AW-1:0]   addr_i,
+  input  logic [  AW-1:0] addr_i,
   input  logic [DW/8-1:0] be_i,
-  input  logic [DW-1:0]   wdata_i,
-  output logic [DW-1:0]   rdata_o     // valid one cycle after req_i
+  input  logic [  DW-1:0] wdata_i,
+  output logic [  DW-1:0] rdata_o   // valid one cycle after req_i
 );
 
   if (IMPL != 0) begin : g_unsupported
@@ -49,7 +49,7 @@ module meds_s1_sram #(
     $error("meds_s1_sram: IMPL=%0d not implemented yet (see header)", IMPL);
   end
 
-  logic [DW-1:0] mem [DEPTH];
+  logic [DW-1:0] mem[DEPTH];
 
   always_ff @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) begin
@@ -57,8 +57,8 @@ module meds_s1_sram #(
     end else begin
       if (req_i) begin
         if (we_i) begin
-          for (int unsigned b = 0; b < DW/8; b++) begin
-            if (be_i[b]) mem[addr_i][b*8 +: 8] <= wdata_i[b*8 +: 8];
+          for (int unsigned b = 0; b < DW / 8; b++) begin
+            if (be_i[b]) mem[addr_i][b*8+:8] <= wdata_i[b*8+:8];
           end
         end
         // Read-during-write returns the OLD contents.  Stated, not accidental:

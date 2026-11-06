@@ -38,14 +38,14 @@ package meds_s1_lite_pkg;
   // 32-bit peripherals are unaffected -- meds_s1_lite_regif gives them a 32-bit
   // register view and handles the byte lane.  See ADR-0005.
   // ---------------------------------------------------------------------------
-  parameter int unsigned LITE_AW = 40;            // INTERFACES.md section 3
+  parameter int unsigned LITE_AW = 40;           // INTERFACES.md section 3
   parameter int unsigned LITE_DW = 64;
   parameter int unsigned LITE_SW = LITE_DW / 8;
 
   typedef logic [LITE_AW-1:0] lite_addr_t;
   typedef logic [LITE_DW-1:0] lite_data_t;
   typedef logic [LITE_SW-1:0] lite_strb_t;
-  typedef logic [1:0]         lite_resp_t;
+  typedef logic [1:0] lite_resp_t;
 
   // AXI4-Lite response encoding.  EXOKAY does not exist on Lite -- there are no
   // exclusive accesses to have.
@@ -69,9 +69,7 @@ package meds_s1_lite_pkg;
     lite_strb_t strb;
   } lite_w_chan_t;
 
-  typedef struct packed {
-    lite_resp_t resp;
-  } lite_b_chan_t;
+  typedef struct packed {lite_resp_t resp;} lite_b_chan_t;
 
   typedef struct packed {
     lite_data_t data;
@@ -102,28 +100,15 @@ package meds_s1_lite_pkg;
     logic         r_valid;
   } lite_rsp_t;
 
-  // Register-file adapter ports. Fields use the bus maximum widths so a
-  // peripheral connects one packed request and response independent of its
-  // ADDR_W/REG_DW parameters; unused upper bits are zero on requests and ignored
-  // on responses.
-  typedef struct packed {
-    lite_addr_t addr;
-    logic       we;
-    logic       re;
-    lite_data_t wdata;
-    lite_strb_t wstrb;
-  } lite_reg_req_t;
-
-  typedef struct packed {
-    lite_data_t rdata;
-    logic       err;
-  } lite_reg_rsp_t;
-
   // Safe idle values.  A peripheral held in reset drives this, never 'x.
   parameter lite_rsp_t LITE_RSP_IDLE = '{
-    aw_ready: 1'b0, w_ready: 1'b0, ar_ready: 1'b0,
-    b: '{resp: RESP_OKAY}, b_valid: 1'b0,
-    r: '{data: '0, resp: RESP_OKAY}, r_valid: 1'b0
+    aw_ready: 1'b0,
+    w_ready: 1'b0,
+    ar_ready: 1'b0,
+    b: '{resp: RESP_OKAY},
+    b_valid: 1'b0,
+    r: '{data: '0, resp: RESP_OKAY},
+    r_valid: 1'b0
   };
 
 endpackage

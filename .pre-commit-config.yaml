@@ -1,0 +1,59 @@
+# MEDS-S1 -- pre-commit hooks
+# Run `pip install pre-commit && pre-commit install` once per clone to enable.
+
+exclude: '^(docs/figures/|PROJECTS\.md$)'
+
+repos:
+  # Official, well-tested hooks for the two common whitespace issues.
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: end-of-file-fixer
+        stages: [pre-commit]
+
+      - id: trailing-whitespace
+        stages: [pre-commit]
+
+      - id: check-merge-conflict
+
+      - id: check-added-large-files
+        args: [--maxkb=500]
+
+      - id: detect-private-key
+
+      - id: check-yaml
+
+      - id: check-case-conflict
+
+      - id: no-commit-to-branch
+        args: [--branch, main]
+        stages: [pre-commit]
+
+  # Tabs -> 4 spaces. No standard hook for this (it's convention-specific),
+  # so it's a small local hook using the POSIX `expand` utility.
+  - repo: local
+    hooks:
+      - id: tabs-to-spaces
+        name: convert tabs to 2 spaces
+        entry: bash -c 'for f in "$@"; do expand -t 2 "$f" > "$f.tmp" && mv "$f.tmp" "$f"; done' --
+        language: system
+        files: '\.(py|sv|svh)$'
+        stages: [pre-commit]
+
+  # Gates below call the Makefile targets, so CI and local commits
+  # run exactly the same checks. Order matters: fixers above run first.
+      - id: verible-check
+        name: Verible check
+        entry: make verible-check
+        language: system
+        pass_filenames: false
+        require_serial: true
+        stages: [pre-commit]
+
+      - id: ci-check
+        name: CI checks
+        entry: make check
+        language: system
+        pass_filenames: false
+        require_serial: true
+        stages: [pre-commit]

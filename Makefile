@@ -24,12 +24,18 @@ FIGS    := $(DOCS)/figures
 PDF     := $(DOCS)/MEDS-S1-Specification.pdf
 SPEC    := specs/MEDS-S1-SPECIFICATION.md
 BUILD   := build
+VERIBLE_DIRS := rtl verif
+VERIBLE_VERSION ?= v0.0-4250-gc1fe2daf
+VERILATOR_VERSION ?= 5.020
+PRE_COMMIT_VERSION ?= 4.6.2
+VERIBLE_FORMAT_FLAGS := --flagfile=.verible-format.flags
 
 # Packages must be compiled before anything that imports them.
 RTL_PKGS  := $(shell find rtl -name '*_pkg.sv' 2>/dev/null | sort)
 RTL_MODS  := $(shell find rtl -name '*.sv' ! -name '*_pkg.sv' 2>/dev/null | sort)
 RTL_SRCS  := $(RTL_PKGS) $(RTL_MODS)
 CFG_FILE  := configs/$(CONFIG).yaml
+VERIBLE_SRCS := $(shell find $(VERIBLE_DIRS) \( -name '*.sv' -o -name '*.svh' \) 2>/dev/null | sort)
 
 export PUPPETEER_EXECUTABLE_PATH ?= $(shell command -v google-chrome || command -v chromium || command -v chromium-browser)
 
@@ -47,6 +53,7 @@ help:
 	@echo "    lint           lint and elaborate CONFIG=$(CONFIG)"
 	@echo "    test-unit      run unit testbenches      [TB=<name> for one]"
 	@echo "    ci             everything the PR gate runs"
+	@echo "    hooks          install git pre-commit hook (once per clone)"
 	@echo
 	@echo "  Documentation"
 	@echo "    docs           figures + specification PDF"
@@ -81,7 +88,38 @@ check-tools:
 	         else echo "absent -- $$2"; fi; }; \
 	echo "Required:"; \
 	need $(PY)                     "everything"; \
+	opt pre-commit                 "git hooks (pip install pre-commit)"; \
+	[ -f .git/hooks/pre-commit ] \
+	  && echo "  git hook                     OK" \
+	  || echo "  git hook                     absent -- run: make hooks"; \
+		if command -v pre-commit >/dev/null 2>&1; then \
+	  found=$$(pre-commit --version | awk '{print $$2}'); \
+	  printf "  %-28s " "pre-commit version"; \
+	  if [ "$$found" = "$(PRE_COMMIT_VERSION)" ]; then \
+	    echo "OK ($$found)"; \
+	  else \
+	    echo "MISMATCH -- expected $(PRE_COMMIT_VERSION), found $$found"; \
+	    ok=0; \
+	  fi; \
+	fi; \
 	need verilator                 "simulation and lint"; \
+	if command -v verilator >/dev/null 2>&1; then \
+	  found=$$(verilator --version | awk '{print $$2}'); \
+	  printf "  %-28s " "verilator version"; \
+	  if [ "$$found" = "$(VERILATOR_VERSION)" ]; then \
+	    echo "OK ($$found)"; \
+	  else \
+		echo "WARNING: expected $(VERILATOR_VERSION), found $$found (CI uses $(VERILATOR_VERSION))"; \
+	  fi; \
+	fi; \
+	opt verible-verilog-lint       "style lint"; \
+	opt verible-verilog-format     "formatting"; \
+	if command -v verible-verilog-lint >/dev/null 2>&1; then \
+	  found=$$(verible-verilog-lint --version | head -n 1 | awk '{print $$2}'); \
+	  printf "  %-28s " "verible version"; \
+	  if [ "$$found" = "$(VERIBLE_VERSION)" ]; then echo "OK ($$found)"; \
+	  else echo "MISMATCH -- expected $(VERIBLE_VERSION), found $$found"; fi; \
+	fi; \
 	echo "Software (T-06 onward):"; \
 	opt riscv64-unknown-elf-gcc    "building software"; \
 	echo "Verification (R-05, M-11, T-07):"; \
@@ -119,6 +157,34 @@ lint: $(CFG_FILE)
 	  verif/verilator.vlt $(RTL_SRCS) \
 	  && echo "  lint clean"
 
+.PHONY: verible-lint verible-format-check verible-format verible-check
+
+verible-lint:
+	@echo "verible lint: $(words $(VERIBLE_SRCS)) files"
+	@verible-verilog-lint --waiver_files lint.waiver $(VERIBLE_SRCS) \
+	  && echo "  verible lint clean"
+
+verible-format-check:
+	@fail=0; \
+	for f in $(VERIBLE_SRCS); do \
+	  verible-verilog-format $(VERIBLE_FORMAT_FLAGS) "$$f" | diff -q "$$f" - >/dev/null 2>&1 \
+	    || { echo "NEEDS FORMAT: $$f"; fail=1; }; \
+	done; \
+	[ $$fail -eq 0 ] && echo "  format clean" || exit 1
+
+verible-format:
+	@verible-verilog-format $(VERIBLE_FORMAT_FLAGS) --inplace $(VERIBLE_SRCS)
+	@echo "formatted $(words $(VERIBLE_SRCS)) files"
+
+verible-check: verible-lint verible-format-check
+
+.PHONY: hooks
+hooks:
+	@command -v pre-commit >/dev/null 2>&1 \
+	  || { echo "pre-commit not found. Run: pip install pre-commit"; exit 1; }
+	@pre-commit install
+	@echo "pre-commit hook installed"
+
 # =============================================================================
 # Test
 # =============================================================================
@@ -129,7 +195,7 @@ test-unit:
 test: test-unit
 
 .PHONY: ci
-ci: check lint test-unit
+ci: check lint verible-check test-unit
 	@echo
 	@echo "PR gate passed. Growth slots still disabled:"
 	@grep -c 'if: false' .github/workflows/pr.yml | xargs -I{} echo "  pr.yml:      {} job(s)"
