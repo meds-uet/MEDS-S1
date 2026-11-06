@@ -1,0 +1,598 @@
+# Copyright 2026 Maktab-e-Digital Systems Lahore.
+# Licensed under the Apache License, Version 2.0, see LICENSE file for details.
+# SPDX-License-Identifier: Apache-2.0
+#
+# =============================================================================
+# rtl/core/defines/core_csr.yaml : Core CSR table and access-control matrix
+#
+# Every SPEC Appendix C CSR the core owns. gen/s1_csr_gen.py merges this file
+# with extensions/*/csr.yaml to produce rtl/generated/s1_csr_pkg.sv.
+# The matrix and its assumptions are explained in rtl/core/csr/csr_access_matrix.md.
+#
+# Rules:
+# - Do not add extension-owned CSRs here; use extensions/<name>/csr.yaml.
+# - min_priv, read_only and debug_only must agree with addr[11:8]; the
+#   generator checks them. ro_override marks a read-only CSR in a read/write range.
+# - presence: impl | ro_zero | alias_of are decoded; absent | deferred | external
+#   are not emitted, so an access to them misses the decoder and is illegal.
+# - config_gate: U, S or PMP. The CSR (or a *_if_U / *_if_S field) exists only
+#   on configs with that feature (SPEC 5.3).
+# - index: [first, last] expands one entry into a numbered range; addr is the
+#   address of the first one.
+# - 'warl: true' flags the CSR for semantic routing through s1_csr_legalize.sv.
+# - 'write_mask' structurally enforces WPRI (Write-0, Preserve, Read-0).
+# =============================================================================
+
+csrs:
+  # ---------------------------------------------------------------------------
+  # Machine information (read-only range 0xF11-0xF14)
+  # ---------------------------------------------------------------------------
+  - name: mvendorid
+    addr: 0xF11
+    class: core
+    presence: ro_zero
+    min_priv: M
+    read_only: true
+    debug_only: false
+    reset: 0x0
+    write_mask: 0x0
+    desc: "Vendor ID; 0 means not implemented"
+
+  - name: marchid
+    addr: 0xF12
+    class: core
+    presence: ro_zero
+    min_priv: M
+    read_only: true
+    debug_only: false
+    reset: 0x0
+    write_mask: 0x0
+    desc: "Architecture ID; 0 means not implemented"
+
+  - name: mimpid
+    addr: 0xF13
+    class: core
+    presence: ro_zero
+    min_priv: M
+    read_only: true
+    debug_only: false
+    reset: 0x0
+    write_mask: 0x0
+    desc: "Implementation ID; 0 means not implemented"
+
+  - name: mhartid
+    addr: 0xF14
+    class: core
+    presence: impl
+    min_priv: M
+    read_only: true
+    debug_only: false
+    reset: 0x0
+    write_mask: 0x0
+    desc: "Hart ID; the CSR file returns its HART_ID parameter, not this reset value"
+
+  # ---------------------------------------------------------------------------
+  # Machine trap setup
+  # ---------------------------------------------------------------------------
+  - name: mstatus
+    addr: 0x300
+    class: core
+    presence: impl
+    min_priv: M
+    read_only: false
+    debug_only: false
+    reset: 0x0
+    write_mask: 0x0000000000021888    # MPRV, MPP, MPIE, MIE.
+    wmask_if_S: 0x0000000000000122    # SPP, SPIE, SIE.
+    ro_const_if_U: 0x0000000200000000 # UXL = 2 (64-bit).
+    ro_const_if_S: 0x0000000800000000 # SXL = 2 (64-bit).
+    hw_write: true
+    warl: true
+    desc: "Machine status: MPRV, MPP, MPIE, MIE; SPP, SPIE, SIE with S-mode; UXL/SXL read-only"
+
+  - name: misa
+    addr: 0x301
+    class: core
+    presence: impl
+    min_priv: M
+    read_only: false
+    debug_only: false
+    reset: 0x0
+    write_mask: 0x0                   # WARL with no writable field: writes are ignored, not illegal.
+    ro_const: 0x8000000000001104      # MXL = 2, I, M, C.
+    ro_const_if_U: 0x0000000000100000 # U.
+    desc: "ISA and extensions; A comes from the config ISA, S stays 0 in v1.0 (SPEC 10.1)"
+
+  - name: medeleg
+    addr: 0x302
+    class: core
+    presence: impl
+    min_priv: M
+    read_only: false
+    debug_only: false
+    config_gate: S
+    reset: 0x0
+    write_mask: 0x000000000000B3FF    # Causes 0-9, 12, 13, 15; ecall from M (11) is read-only zero.
+    desc: "Machine exception delegation to S-mode"
+
+  - name: mideleg
+    addr: 0x303
+    class: core
+    presence: impl
+    min_priv: M
+    read_only: false
+    debug_only: false
+    config_gate: S
+    reset: 0x0
+    write_mask: 0x0000000000000222    # SEIP, STIP, SSIP.
+    desc: "Machine interrupt delegation to S-mode"
+
+  - name: mie
+    addr: 0x304
+    class: core
+    presence: impl
+    min_priv: M
+    read_only: false
+    debug_only: false
+    reset: 0x0
+    write_mask: 0x0000000000000888    # MEIE, MTIE, MSIE.
+    wmask_if_S: 0x0000000000000222    # SEIE, STIE, SSIE.
+    desc: "Machine interrupt enable: MEIE, MTIE, MSIE; SEIE, STIE, SSIE with S-mode"
+
+  - name: mtvec
+    addr: 0x305
+    class: core
+    presence: impl
+    min_priv: M
+    read_only: false
+    debug_only: false
+    reset: 0x0
+    write_mask: 0xFFFFFFFFFFFFFFFF    # BASE (63:2) and MODE (1:0).
+    warl: true                        # MODE >= 2 keeps the previous MODE.
+    desc: "Trap vector base and mode; Direct and Vectored supported"
+
+  - name: mcounteren
+    addr: 0x306
+    class: counter
+    presence: deferred
+    min_priv: M
+    read_only: false
+    debug_only: false
+    config_gate: U
+    desc: "Counter enable for lower modes; deferred with the performance counters"
+
+  - name: menvcfg
+    addr: 0x30A
+    class: core
+    presence: ro_zero
+    min_priv: M
+    read_only: false
+    debug_only: false
+    config_gate: U
+    reset: 0x0
+    write_mask: 0x0
+    desc: "Environment configuration; read-only zero until its fields are specified"
+
+  - name: mcountinhibit
+    addr: 0x320
+    class: counter
+    presence: deferred
+    min_priv: M
+    read_only: false
+    debug_only: false
+    desc: "Counter inhibit; deferred with the performance counters"
+
+  - name: mhpmevent
+    addr: 0x323
+    index: [3, 15]
+    class: counter
+    presence: deferred
+    min_priv: M
+    read_only: false
+    debug_only: false
+    desc: "Performance event selector; deferred with the performance counters"
+
+  # ---------------------------------------------------------------------------
+  # Machine trap handling
+  # ---------------------------------------------------------------------------
+  - name: mscratch
+    addr: 0x340
+    class: core
+    presence: impl
+    min_priv: M
+    read_only: false
+    debug_only: false
+    reset: 0x0
+    write_mask: 0xFFFFFFFFFFFFFFFF
+    desc: "Machine scratch register for trap-handler context"
+
+  - name: mepc
+    addr: 0x341
+    class: core
+    presence: impl
+    min_priv: M
+    read_only: false
+    debug_only: false
+    reset: 0x0
+    write_mask: 0xFFFFFFFFFFFFFFFE    # IALIGN=16 with the C extension; bit 0 is always zero.
+    hw_write: true
+    desc: "Exception PC, written on trap entry"
+
+  - name: mcause
+    addr: 0x342
+    class: core
+    presence: impl
+    min_priv: M
+    read_only: false
+    debug_only: false
+    reset: 0x0
+    write_mask: 0xFFFFFFFFFFFFFFFF
+    hw_write: true
+    desc: "Trap cause: interrupt bit + exception code"
+
+  - name: mtval
+    addr: 0x343
+    class: core
+    presence: impl
+    min_priv: M
+    read_only: false
+    debug_only: false
+    reset: 0x0
+    write_mask: 0xFFFFFFFFFFFFFFFF
+    hw_write: true
+    desc: "Trap value: faulting address or instruction bits"
+
+  - name: mip
+    addr: 0x344
+    class: core
+    presence: impl
+    min_priv: M
+    read_only: false
+    debug_only: false
+    reset: 0x0
+    write_mask: 0x0                   # MEIP, MTIP, MSIP come from the PLIC and CLINT.
+    wmask_if_S: 0x0000000000000222    # SEIP, STIP, SSIP.
+    hw_write: true
+    desc: "Machine interrupt pending; M bits are hardware-owned"
+
+  # ---------------------------------------------------------------------------
+  # Physical memory protection (storage owner deferred to R-02)
+  # ---------------------------------------------------------------------------
+  - name: pmpcfg0
+    addr: 0x3A0
+    class: core
+    presence: deferred
+    min_priv: M
+    read_only: false
+    debug_only: false
+    config_gate: PMP
+    desc: "PMP configuration, entries 0-7"
+
+  - name: pmpcfg1
+    addr: 0x3A1
+    class: core
+    presence: absent
+    min_priv: M
+    read_only: false
+    debug_only: false
+    desc: "Does not exist on RV64"
+
+  - name: pmpcfg2
+    addr: 0x3A2
+    class: core
+    presence: deferred
+    min_priv: M
+    read_only: false
+    debug_only: false
+    config_gate: PMP
+    desc: "PMP configuration, entries 8-15"
+
+  - name: pmpcfg3
+    addr: 0x3A3
+    class: core
+    presence: absent
+    min_priv: M
+    read_only: false
+    debug_only: false
+    desc: "Does not exist on RV64"
+
+  - name: pmpaddr
+    addr: 0x3B0
+    index: [0, 15]
+    class: core
+    presence: deferred
+    min_priv: M
+    read_only: false
+    debug_only: false
+    config_gate: PMP
+    desc: "PMP address register"
+
+  # ---------------------------------------------------------------------------
+  # Machine counters
+  # ---------------------------------------------------------------------------
+  - name: mcycle
+    addr: 0xB00
+    class: counter
+    presence: deferred
+    min_priv: M
+    read_only: false
+    debug_only: false
+    desc: "Cycle counter; deferred with the performance counters"
+
+  - name: minstret
+    addr: 0xB02
+    class: counter
+    presence: deferred
+    min_priv: M
+    read_only: false
+    debug_only: false
+    desc: "Instructions-retired counter; deferred with the performance counters"
+
+  - name: mhpmcounter
+    addr: 0xB03
+    index: [3, 15]
+    class: counter
+    presence: deferred
+    min_priv: M
+    read_only: false
+    debug_only: false
+    desc: "Performance counter; deferred with the performance counters"
+
+  # ---------------------------------------------------------------------------
+  # Supervisor (S1-Linux only, SPEC 5.3)
+  # ---------------------------------------------------------------------------
+  - name: sstatus
+    addr: 0x100
+    class: core
+    presence: alias_of
+    min_priv: S
+    read_only: false
+    debug_only: false
+    config_gate: S
+    view_of: mstatus
+    view_mask: 0x80000003000DE762     # SD, UXL, MXR, SUM, XS, FS, VS, SPP, UBE, SPIE, SIE.
+    write_mask: 0x0000000000000122    # SPP, SPIE, SIE.
+    desc: "S-mode view of mstatus"
+
+  - name: sie
+    addr: 0x104
+    class: core
+    presence: alias_of
+    min_priv: S
+    read_only: false
+    debug_only: false
+    config_gate: S
+    view_of: mie
+    view_mask: 0x0000000000000222
+    write_mask: 0x0000000000000222    # SEIE, STIE, SSIE.
+    desc: "S-mode view of mie"
+
+  - name: stvec
+    addr: 0x105
+    class: core
+    presence: impl
+    min_priv: S
+    read_only: false
+    debug_only: false
+    config_gate: S
+    reset: 0x0
+    write_mask: 0xFFFFFFFFFFFFFFFF
+    warl: true
+    desc: "Supervisor trap vector base and mode"
+
+  - name: scounteren
+    addr: 0x106
+    class: counter
+    presence: deferred
+    min_priv: S
+    read_only: false
+    debug_only: false
+    config_gate: S
+    desc: "Counter enable for U-mode; deferred with the performance counters"
+
+  - name: sscratch
+    addr: 0x140
+    class: core
+    presence: impl
+    min_priv: S
+    read_only: false
+    debug_only: false
+    config_gate: S
+    reset: 0x0
+    write_mask: 0xFFFFFFFFFFFFFFFF
+    desc: "Supervisor scratch register for trap-handler context"
+
+  - name: sepc
+    addr: 0x141
+    class: core
+    presence: impl
+    min_priv: S
+    read_only: false
+    debug_only: false
+    config_gate: S
+    reset: 0x0
+    write_mask: 0xFFFFFFFFFFFFFFFE
+    hw_write: true
+    desc: "Supervisor exception PC"
+
+  - name: scause
+    addr: 0x142
+    class: core
+    presence: impl
+    min_priv: S
+    read_only: false
+    debug_only: false
+    config_gate: S
+    reset: 0x0
+    write_mask: 0xFFFFFFFFFFFFFFFF
+    hw_write: true
+    desc: "Supervisor trap cause"
+
+  - name: stval
+    addr: 0x143
+    class: core
+    presence: impl
+    min_priv: S
+    read_only: false
+    debug_only: false
+    config_gate: S
+    reset: 0x0
+    write_mask: 0xFFFFFFFFFFFFFFFF
+    hw_write: true
+    desc: "Supervisor trap value"
+
+  - name: sip
+    addr: 0x144
+    class: core
+    presence: alias_of
+    min_priv: S
+    read_only: false
+    debug_only: false
+    config_gate: S
+    view_of: mip
+    view_mask: 0x0000000000000222
+    write_mask: 0x0000000000000002    # SSIP only; SEIP and STIP are set by M-mode or hardware.
+    desc: "S-mode view of mip"
+
+  - name: satp
+    addr: 0x180
+    class: core
+    presence: ro_zero
+    min_priv: S
+    read_only: false
+    debug_only: false
+    config_gate: S
+    reset: 0x0
+    write_mask: 0x0                   # Bare only until Sv39; other MODE values are ignored.
+    desc: "Address translation; Bare only, translation bypassed in v1.0"
+
+  # ---------------------------------------------------------------------------
+  # User read-only counter shadows
+  # ---------------------------------------------------------------------------
+  - name: cycle
+    addr: 0xC00
+    class: counter
+    presence: deferred
+    min_priv: U
+    read_only: true
+    debug_only: false
+    desc: "Read-only shadow of mcycle; deferred with the performance counters"
+
+  - name: time
+    addr: 0xC01
+    class: counter
+    presence: absent
+    min_priv: U
+    read_only: true
+    debug_only: false
+    desc: "No time source in the core; reads trap for M-mode emulation"
+
+  - name: instret
+    addr: 0xC02
+    class: counter
+    presence: deferred
+    min_priv: U
+    read_only: true
+    debug_only: false
+    desc: "Read-only shadow of minstret; deferred with the performance counters"
+
+  - name: hpmcounter
+    addr: 0xC03
+    index: [3, 15]
+    class: counter
+    presence: deferred
+    min_priv: U
+    read_only: true
+    debug_only: false
+    desc: "Read-only shadow of mhpmcounter; deferred with the performance counters"
+
+  # ---------------------------------------------------------------------------
+  # Trigger and debug (deferred with the debug FSM)
+  # ---------------------------------------------------------------------------
+  - name: tselect
+    addr: 0x7A0
+    class: core
+    presence: deferred
+    min_priv: M
+    read_only: false
+    debug_only: false
+    desc: "Trigger select"
+
+  - name: tdata1
+    addr: 0x7A1
+    class: core
+    presence: deferred
+    min_priv: M
+    read_only: false
+    debug_only: false
+    desc: "Trigger data 1"
+
+  - name: tdata2
+    addr: 0x7A2
+    class: core
+    presence: deferred
+    min_priv: M
+    read_only: false
+    debug_only: false
+    desc: "Trigger data 2"
+
+  - name: tdata3
+    addr: 0x7A3
+    class: core
+    presence: deferred
+    min_priv: M
+    read_only: false
+    debug_only: false
+    desc: "Trigger data 3"
+
+  - name: dcsr
+    addr: 0x7B0
+    class: core
+    presence: deferred
+    min_priv: M
+    read_only: false
+    debug_only: true
+    desc: "Debug control and status; reset needs prv=3, xdebugver=4 when implemented"
+
+  - name: dpc
+    addr: 0x7B1
+    class: core
+    presence: deferred
+    min_priv: M
+    read_only: false
+    debug_only: true
+    desc: "Debug return PC"
+
+  - name: dscratch0
+    addr: 0x7B2
+    class: core
+    presence: deferred
+    min_priv: M
+    read_only: false
+    debug_only: true
+    desc: "Debug scratch register 0"
+
+  - name: dscratch1
+    addr: 0x7B3
+    class: core
+    presence: deferred
+    min_priv: M
+    read_only: false
+    debug_only: true
+    desc: "Debug scratch register 1"
+
+  # ---------------------------------------------------------------------------
+  # MEDS-S1 platform (extensions/REGISTRY.md section 2)
+  # ---------------------------------------------------------------------------
+  - name: meds_s1_version
+    addr: 0x7C0
+    class: core
+    presence: impl
+    min_priv: M
+    read_only: true
+    ro_override: true                 # 0x7C0 is a read/write custom range; see the matrix doc.
+    debug_only: false
+    reset: 0x0
+    write_mask: 0x0
+    ro_const: 0x0000000000000100      # MEDS_S1_PLATFORM_VERSION, INTERFACES.md.
+    desc: "Platform version, {major[15:0], minor[15:0]}"

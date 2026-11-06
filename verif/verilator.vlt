@@ -17,6 +17,10 @@
 // subset of it; that is the point of a shared package, not a defect.
 lint_off -rule UNUSEDPARAM -file "*s1_pkg.sv"
 
+// s1_csr_pkg names the address of every CSR in core_csr.yaml, decoded or not,
+// so the CSR file and its testbench can refer to any of them by name.
+lint_off -rule UNUSEDPARAM -file "*rtl/generated/s1_csr_pkg.sv"
+
 // Testbenches legitimately declare signals that only some test paths drive, and
 // deliberately mix widths when building corner-case stimulus.
 lint_off -rule UNUSEDSIGNAL -file "*verif/unit/*"
