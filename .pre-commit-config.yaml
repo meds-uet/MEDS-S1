@@ -39,3 +39,21 @@ repos:
         language: system
         files: '\.(py|sv|svh)$'
         stages: [pre-commit]
+
+  # Gates below call the Makefile targets, so CI and local commits
+  # run exactly the same checks. Order matters: fixers above run first.
+      - id: verible-check
+        name: Verible check
+        entry: make verible-check
+        language: system
+        pass_filenames: false
+        require_serial: true
+        stages: [pre-commit]
+
+      - id: ci-check
+        name: CI checks
+        entry: make check
+        language: system
+        pass_filenames: false
+        require_serial: true
+        stages: [pre-commit]
