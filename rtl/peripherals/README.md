@@ -7,7 +7,10 @@ CLINT, PLIC, UART, SPI, GPIO, timers — mostly thin wrappers around reused IP.
 Anything invented here without a reuse justification (SCOPE_CONTRACT.md §5).
 
 ## How to add something
-Wrap the IP, give it an AXI4-Lite window, add it to a config YAML, write the unit testbench and the HAL driver in `sw/bsp/`. Record the upstream source and licence in the module README.
+Wrap the IP behind the shared Lite request/response structures, connect the
+AXI4-Lite adapter at the fabric boundary, add it to a config YAML, write the
+unit testbench and the HAL driver in `sw/bsp/`. Record the upstream source and
+licence in the module README.
 
 ## The bus port — read this before you write a peripheral
 
