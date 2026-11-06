@@ -125,7 +125,7 @@ Each assumption is the default used now. The question under it is what to ask th
 - Question: §10.1 says S CSRs are "present, stubbed" in v1.0. Does that mean present on every config, or only on S1-Linux? The privileged spec says S CSRs, `medeleg` and `mideleg` must not exist without S.
 
 **ASSUMPTION-2 — Interrupt priority is MEI > MSI > MTI > SEI > SSI > STI.**
-- Following the privileged spec, every interrupt destined for M beats every interrupt destined for S. The list applies within each destination.
+- Following the privileged spec, every interrupt destined for M beats every interrupt destined for S. The list applies within each destination (`s1_irq_prio`).
 - Question: §10.3 reads "external > software > timer, M > S". Is privilege the major key, as in the privileged spec?
 
 **ASSUMPTION-3 — `mtvec` / `stvec` support Direct and Vectored.**

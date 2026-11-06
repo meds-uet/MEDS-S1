@@ -4,6 +4,8 @@
 The T-03 machine-mode state:
 - `s1_csr_file.sv` (decode, storage, access checks)
 - `s1_csr_legalize.sv` (WARL fields)
+- `s1_trap_unit.sv` (trap entry, xRET, privilege)
+- `s1_irq_prio.sv` (which pending, enabled interrupt to take)
 
 `csr_access_matrix.md` is the access-control design: who may access each CSR, and the assumptions behind it.
 

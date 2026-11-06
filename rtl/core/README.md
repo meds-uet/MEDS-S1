@@ -25,6 +25,8 @@ Status tags follow CODING_STANDARD.md §5. This table is the fastest way to see 
 | `s1_regfile.sv` | TODO | T-02 | | |
 | `csr/s1_csr_file.sv` | WIP | T-03 | `tb_s1_csr_file` (30 checks) | [page](../../docs/modules/s1_csr_file.md) |
 | `csr/s1_csr_legalize.sv` | WIP | T-03 | through `tb_s1_csr_file` | [page](../../docs/modules/s1_csr_legalize.md) |
+| `csr/s1_trap_unit.sv` | WIP | T-03 | `tb_s1_trap_unit` (~36.5k checks) | [page](../../docs/modules/s1_trap_unit.md) |
+| `csr/s1_irq_prio.sv` | WIP | T-03 | `tb_s1_irq_prio` (10,485,774 checks) | [page](../../docs/modules/s1_irq_prio.md) |
 | `s1_completion_buffer.sv` | TODO | **R-01 (critical path)** | | |
 | `s1_mxif_port.sv` | TODO | **R-01 (critical path)** | | |
 | `s1_lsu.sv` | TODO | R-02 | | |
