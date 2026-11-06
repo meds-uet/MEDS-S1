@@ -23,7 +23,8 @@ Status tags follow CODING_STANDARD.md §5. This table is the fastest way to see 
 | `s1_fetch.sv` | TODO | T-01 | | |
 | `s1_decode.sv` | TODO | T-02 | | |
 | `s1_regfile.sv` | TODO | T-02 | | |
-| `s1_csr.sv` | TODO | T-03 | | |
+| `csr/s1_csr_file.sv` | WIP | T-03 | `tb_s1_csr_file` (30 checks) | [page](../../docs/modules/s1_csr_file.md) |
+| `csr/s1_csr_legalize.sv` | WIP | T-03 | through `tb_s1_csr_file` | [page](../../docs/modules/s1_csr_legalize.md) |
 | `s1_completion_buffer.sv` | TODO | **R-01 (critical path)** | | |
 | `s1_mxif_port.sv` | TODO | **R-01 (critical path)** | | |
 | `s1_lsu.sv` | TODO | R-02 | | |
