@@ -1,0 +1,29 @@
+name: Bug
+description: Something is broken
+labels: ["type:bug"]
+body:
+  - type: input
+    id: config
+    attributes: {label: Config, placeholder: "s1_base"}
+    validations: {required: true}
+  - type: input
+    id: board
+    attributes: {label: Board, placeholder: "verilator / kc705"}
+  - type: input
+    id: commit
+    attributes: {label: Commit or platform.lock, placeholder: "a3f91c2"}
+    validations: {required: true}
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: The exact commands. A bug that cannot be re-run is not a bug report.
+      render: shell
+    validations: {required: true}
+  - type: textarea
+    id: expected
+    attributes: {label: Expected vs actual}
+    validations: {required: true}
+  - type: textarea
+    id: logs
+    attributes: {label: Relevant output, render: shell}

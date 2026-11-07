@@ -1,0 +1,23 @@
+# Copyright 2026 Maktab-e-Digital Systems Lahore.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Owner project: T-08.  See boards/verilator/board.yaml for the four-file rule.
+name: kc705
+description: "Xilinx Kintex-7 XC7K325T with DDR3 SODIMM. The primary hardware target."
+
+fpga:
+  part: xc7k325tffg900-2
+  vendor: xilinx
+  toolchain: vivado
+
+clocks:
+  ext_clk_mhz: 200          # differential system clock
+  clk_core_mhz: 100         # target; stretch 100+, NFR-1 floor is 50
+  clk_accel_mhz: 150
+memory:
+  sram_bytes: 262144
+  dram: {type: ddr3, bytes: 1073741824, controller: mig}   # TODO T-08: confirm MIG UI width/clock
+peripherals: [uart0, spi0, gpio0, timer0]
+debug:
+  transport: jtag
+  # TODO T-08: confirm the JTAG chain position for the BSCANE2 tap

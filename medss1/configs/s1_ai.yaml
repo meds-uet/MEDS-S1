@@ -1,0 +1,62 @@
+# Copyright 2026 Maktab-e-Digital Systems Lahore.
+# SPDX-License-Identifier: Apache-2.0
+#
+# MEDS-S1 build configuration: s1_ai
+# Generated artefacts come from this file alone (SPEC section 26).
+# A config that is not in CI does not exist -- see .github/workflows/pr.yml.
+
+name: s1_ai
+description: "accelerator research"
+
+isa: rv64imac_zicsr_zifencei_zicbom_zicboz
+privilege: [M, U]
+
+core:
+  xlen: 64
+  cb_depth: 8              # completion buffer entries (SPEC 9.3)
+  pmp_regions: 16
+  branch_predictor: btfn   # static; swappable behind fetch_req/fetch_rsp
+  mul_latency: 3
+  mxif: true
+
+cache:
+  icache: 16K
+  dcache: 16K
+
+mmu: none
+
+backbone:
+  protocol: axi4
+  data_width: 256
+  addr_width: 40
+  id_width: 6
+peripheral_bus:
+  protocol: axi4lite
+  data_width: 64
+
+sockets: 2
+debug: true
+
+boards: ["kc705"]
+
+# -- memory map --------------------------------------------------------------
+# Every region carries the full PMA set (INTERFACES.md section 9, rules P1-P5).
+# cacheable | idempotent | order | atomic | align | widths (device regions)
+memory_map:
+  - {name: bootrom, base: 0x00001000, size: 32K,  type: rom,
+     pma: {cacheable: i-only, idempotent: true,  order: rvwmo,  atomic: [],           align: natural}}
+  - {name: clint,   base: 0x02000000, size: 64K,  type: device,
+     pma: {cacheable: false,  idempotent: false, order: strong, atomic: [],           align: natural, widths: [4, 8]}}
+  - {name: plic,    base: 0x0C000000, size: 4M,   type: device,
+     pma: {cacheable: false,  idempotent: false, order: strong, atomic: [],           align: natural, widths: [4]}}
+  - {name: uart0,   base: 0x10000000, size: 4K,   type: device, irq: 1,
+     pma: {cacheable: false,  idempotent: false, order: strong, atomic: [],           align: natural, widths: [4]}}
+  - {name: sram,    base: 0x40000000, size: 256K, type: memory,
+     pma: {cacheable: true,   idempotent: true,  order: rvwmo,  atomic: [lrsc, amo],  align: any}}
+  - {name: dram,    base: 0x80000000, size: 1G,   type: memory,
+     pma: {cacheable: true,   idempotent: true,  order: rvwmo,  atomic: [lrsc, amo],  align: any}}
+  # The same physical DRAM, mapped twice. Costs one address-decode bit and gives
+  # every accelerator author a correct shared-buffer story before Zicbom is
+  # trusted (ADR-0004, SPEC 18.4). Keep it after Zicbom lands.
+  - {name: dram_uncached, base: 0x100000000, size: 1G, type: memory, alias_of: dram,
+     pma: {cacheable: false,  idempotent: true,  order: strong, atomic: [amo],        align: natural}}
