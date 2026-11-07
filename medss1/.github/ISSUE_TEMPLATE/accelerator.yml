@@ -1,0 +1,54 @@
+name: Accelerator proposal (thesis)
+description: Propose attaching a DL/ML or domain accelerator to MEDS-S1
+labels: ["type:accelerator"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        SPEC §33.4 — no accelerator project starts without these four answered
+        **in writing**. This template is that checklist.
+  - type: input
+    id: name
+    attributes: {label: Accelerator name, placeholder: "meds-x-conv"}
+    validations: {required: true}
+  - type: dropdown
+    id: coupling
+    attributes:
+      label: 1. Coupling mechanism
+      description: Follow the SPEC §21 flowchart. Most DL/ML work should use the socket.
+      options: ["Loose — accelerator socket", "Tight — MXIF", "Not sure (discuss first)"]
+    validations: {required: true}
+  - type: textarea
+    id: coupling_why
+    attributes: {label: Why that mechanism}
+    validations: {required: true}
+  - type: textarea
+    id: bandwidth
+    attributes:
+      label: 2. Bandwidth calculation (SPEC §22.4)
+      description: |
+        required = bytes moved per inference / target latency
+        available = backbone_width/8 × f_clk × ~0.7
+        If required > available, your project is about data movement, not
+        arithmetic — say so.
+      value: |
+        bytes per inference:
+        target latency:
+        required bandwidth:
+        available bandwidth:
+        verdict:
+    validations: {required: true}
+  - type: textarea
+    id: workloads
+    attributes:
+      label: 3. Target workloads and measured scalar baselines
+      description: From the frozen suite (SPEC §32). A speedup without a baseline means nothing.
+    validations: {required: true}
+  - type: textarea
+    id: negative
+    attributes:
+      label: 4. What the honest negative result would look like
+      description: |
+        If you cannot describe how your idea might fail, you have not understood
+        it yet. This is not a trick question.
+    validations: {required: true}

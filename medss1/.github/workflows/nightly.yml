@@ -1,0 +1,70 @@
+# Copyright 2026 Maktab-e-Digital Systems Lahore.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Nightly regression.  Budget: under 4 hours.
+#
+# Everything here is a GROWTH SLOT.  Jobs turn on as their owning project lands;
+# each is present and skipped so enabling it is a one-line change.
+#
+# Synthesis needs the self-hosted runner and a Vivado licence permitting
+# headless batch use -- verify BEFORE purchase (EXECUTION_PLAN R12).
+name: Nightly
+
+on:
+  schedule: [{cron: "0 21 * * *"}]      # 02:00 PKT
+  workflow_dispatch:
+
+jobs:
+  random:
+    name: constrained-random regression
+    if: false            # ENABLE IN T-07
+    runs-on: [self-hosted, meds-ci]
+    steps:
+      - uses: actions/checkout@v4
+      - run: make test-random SEEDS=200
+
+  formal:
+    name: riscv-formal + SVA liveness
+    if: false            # ENABLE IN R-01 / T-07
+    runs-on: [self-hosted, meds-ci]
+    steps:
+      - uses: actions/checkout@v4
+      - run: make formal
+
+  synth:
+    name: synthesis, timing and area
+    if: false            # ENABLE IN T-08, needs the runner box
+    runs-on: [self-hosted, meds-ci]
+    strategy:
+      matrix: {config: [s1_base, s1_ai]}
+    steps:
+      - uses: actions/checkout@v4
+      - run: make synth CONFIG=${{ matrix.config }} BOARD=kc705
+      - uses: actions/upload-artifact@v4
+        with:
+          name: synth-${{ matrix.config }}
+          path: build/synth/${{ matrix.config }}/*.rpt
+      # Track f_max and utilisation over time -- a slow decline across a
+      # semester is the normal failure mode and is only visible if plotted.
+      - run: python3 scripts/track_trends.py --append build/synth/${{ matrix.config }}
+
+  coverage:
+    name: functional coverage
+    if: false            # ENABLE IN T-07
+    runs-on: [self-hosted, meds-ci]
+    steps:
+      - uses: actions/checkout@v4
+      - run: make coverage
+
+  keepalive:
+    name: nightly heartbeat
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: report which nightly jobs are still disabled
+        run: |
+          echo "Nightly growth slots still disabled:"
+          grep -n 'if: false' .github/workflows/nightly.yml || echo "  none -- all enabled"
+          echo
+          echo "PR growth slots still disabled:"
+          grep -n 'if: false' .github/workflows/pr.yml || echo "  none -- all enabled"

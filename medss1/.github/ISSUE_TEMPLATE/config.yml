@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question — how do I…, why is…
+    url: https://github.com/meds-uet/meds-s1/discussions/categories/q-a
+    about: Ask in Discussions. It is searchable; chat is not.
+  - name: Design proposal
+    url: https://github.com/meds-uet/meds-s1/discussions/categories/design
+    about: Discuss a design before it becomes an interface-change issue.

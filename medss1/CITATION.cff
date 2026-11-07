@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+title: "MEDS-S1: An open RISC-V SoC platform for accelerator research"
+message: "If you use this platform in academic work, please cite it."
+type: software
+authors:
+  - family-names: Shahid
+    given-names: Umer
+    affiliation: "Maktab-e-Digital Systems (MEDS), UET Lahore"
+repository-code: "https://github.com/meds-uet/meds-s1"
+license: Apache-2.0
+version: 0.1.0
+date-released: "2026-08-03"
+keywords:
+  - RISC-V
+  - SoC
+  - accelerator
+  - edge AI
+  - FPGA
+  - open hardware

@@ -1,0 +1,56 @@
+name: Module implementation (T1/T2)
+description: Implement an RTL module against a frozen spec
+labels: ["type:module"]
+body:
+  - type: input
+    id: module
+    attributes: {label: Module name, placeholder: "s1_regfile"}
+    validations: {required: true}
+  - type: input
+    id: project
+    attributes: {label: Catalogue project, placeholder: "T-02"}
+    validations: {required: true}
+  - type: input
+    id: spec
+    attributes: {label: Specification, placeholder: "SPEC §7.2"}
+    validations: {required: true}
+  - type: textarea
+    id: contract
+    attributes:
+      label: Interface contract
+      description: |
+        Not just the port list — what may a caller assume, and what does this
+        module assume of them? Latency, backpressure, reset state.
+    validations: {required: true}
+  - type: textarea
+    id: tbplan
+    attributes:
+      label: Testbench plan
+      description: |
+        What will you check, and how will you derive expectations from
+        parameters rather than constants (R-V2)? Which hang-class properties
+        will you cover (R-V5)?
+    validations: {required: true}
+  - type: input
+    id: owner
+    attributes: {label: Owner, placeholder: "@handle"}
+    validations: {required: true}
+  - type: input
+    id: backup
+    attributes:
+      label: Backup owner
+      description: Required. Contributors rotate; a module with one owner has a bus factor of one.
+      placeholder: "@handle"
+    validations: {required: true}
+  - type: checkboxes
+    id: dod
+    attributes:
+      label: Definition of done (EXECUTION_PLAN §8)
+      options:
+        - {label: Design note reviewed before implementation}
+        - {label: RTL merged, lint clean}
+        - {label: Unit testbench in CI, passing}
+        - {label: "docs/modules/<module>.md written"}
+        - {label: Elaborates in at least one named config}
+        - {label: Owner and backup recorded}
+        - {label: Demoed at a demo day}

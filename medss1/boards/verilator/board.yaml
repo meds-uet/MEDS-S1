@@ -1,0 +1,22 @@
+# Copyright 2026 Maktab-e-Digital Systems Lahore.
+# SPDX-License-Identifier: Apache-2.0
+#
+# A board port is EXACTLY four files (NFR-8):
+#   board.yaml   this file -- clocks, memory, peripheral presence
+#   board.xdc    pin constraints        (not applicable to Verilator)
+#   board_top.sv PLL/MIG/IO instantiation only -- NO LOGIC
+#   openocd.cfg  debug transport        (not applicable to Verilator)
+#
+# If your port needs a fifth file, the abstraction is leaking. Raise it.
+name: verilator
+description: "Simulation target. Counts as a board -- having two from the start is what forces the abstraction to be real."
+
+clocks:
+  clk_core_mhz: 100
+  clk_accel_mhz: 100        # same domain in simulation
+memory:
+  sram_bytes: 262144
+  dram_bytes: 1073741824    # modelled, not physical
+peripherals: [uart0]
+debug:
+  transport: none           # the testbench loads the ELF directly

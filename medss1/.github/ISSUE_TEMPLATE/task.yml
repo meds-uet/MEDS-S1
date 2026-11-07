@@ -1,0 +1,39 @@
+name: Task (T0/T1)
+description: A bounded unit of work, 20 hours or less
+labels: ["type:task"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A task must fit in **≤ 20 hours** and be describable in one issue.
+        If it cannot, it is a work package and needs decomposing
+        (EXECUTION_PLAN.md §4.2).
+  - type: input
+    id: project
+    attributes: {label: Catalogue project, placeholder: "M-01, or 'none'"}
+    validations: {required: true}
+  - type: input
+    id: wp
+    attributes: {label: Work package, placeholder: "WP9"}
+  - type: textarea
+    id: what
+    attributes:
+      label: What needs doing
+      description: Concrete enough that someone else could pick it up.
+    validations: {required: true}
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Binary. "Works well" is not a criterion.
+      value: |
+        - [ ] 
+        - [ ] `make ci` green
+    validations: {required: true}
+  - type: input
+    id: hours
+    attributes: {label: Estimated hours, placeholder: "12"}
+    validations: {required: true}
+  - type: input
+    id: spec
+    attributes: {label: Spec reference, placeholder: "SPEC §24, INTERFACES.md §9"}

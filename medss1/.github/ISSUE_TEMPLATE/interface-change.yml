@@ -1,0 +1,54 @@
+name: Interface change (T3 only)
+description: Change a frozen interface — MXIF, the socket, MEM-REQ, RVFI, the memory map
+labels: ["type:interface-change", "breaking-change"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ⚠️ **Frozen interfaces break every attached accelerator when they change.**
+        Only T3 architects may approve this. Get approval *before* writing code.
+        See `specs/INTERFACES.md` §10.
+  - type: dropdown
+    id: iface
+    attributes:
+      label: Which interface
+      options:
+        - MXIF (INTERFACES §1)
+        - MEM-REQ (INTERFACES §2)
+        - AXI fabric (INTERFACES §3)
+        - Accelerator socket (INTERFACES §4)
+        - RVFI / RVFI-V (INTERFACES §5)
+        - Memory map / PMA (INTERFACES §9)
+    validations: {required: true}
+  - type: textarea
+    id: change
+    attributes: {label: The change, description: Signals, semantics, or both.}
+    validations: {required: true}
+  - type: textarea
+    id: why
+    attributes:
+      label: Why this cannot be done without changing the interface
+      description: The bar is high. Most needs are met by an additive, defaulted signal.
+    validations: {required: true}
+  - type: textarea
+    id: affected
+    attributes:
+      label: Who is affected and what is their migration
+      description: Every implementer of this interface, by name, and what they must do.
+    validations: {required: true}
+  - type: dropdown
+    id: compat
+    attributes:
+      label: Compatibility
+      options: ["Additive — backward compatible (minor bump)", "Breaking (major bump + deprecation window)"]
+    validations: {required: true}
+  - type: checkboxes
+    id: gates
+    attributes:
+      label: Before merge
+      options:
+        - {label: Architect approval obtained}
+        - {label: All affected module owners signed off}
+        - {label: Version constant bumped}
+        - {label: Conformance testbench updated}
+        - {label: ADR written in docs/adr/ if reversibility is Hard or worse}

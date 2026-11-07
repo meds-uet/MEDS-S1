@@ -1,0 +1,143 @@
+# Copyright 2026 Maktab-e-Digital Systems Lahore.
+# SPDX-License-Identifier: Apache-2.0
+#
+# The merge gate.  Budget: under 20 minutes (NFR-3).
+#
+# GROWTH PLAN -- jobs are added here as their owning project lands.  A job that
+# is not ready is present and SKIPPED rather than absent, so enabling it is a
+# one-line change instead of a new pipeline:
+#
+#   archtest  (ACT4 with Sail)        enable in M-11 / T-07  -> drop `if: false`
+#   cosim     (Spike over RVFI)       enable in R-05         -> drop `if: false`
+#   bench     (CoreMark, Embench)     enable in M-07 / M-08  -> drop `if: false`
+#
+# Until the self-hosted runner is racked (EXECUTION_PLAN R7) these run on
+# GitHub-hosted runners.  Swap `runs-on` to [self-hosted, meds-ci] then.
+
+name: PR
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  VERILATOR_VERSION: "5.020"
+
+jobs:
+  # ---------------------------------------------------------------- always on
+  structure:
+    name: structure conventions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install pyyaml
+      - name: check repository conventions
+        run: python3 scripts/check_structure.py
+
+  docs:
+    name: documentation gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - name: every RTL module has a docs/modules page
+        run: python3 scripts/check_docs.py
+
+  lint:
+    name: lint + elaborate
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        config: [s1_nano, s1_base, s1_ai, s1_linux]
+    steps:
+      - uses: actions/checkout@v4
+      - name: install verilator
+        run: sudo apt-get update && sudo apt-get install -y verilator
+      - name: lint ${{ matrix.config }}
+        run: make lint CONFIG=${{ matrix.config }}
+
+  unit:
+    name: unit testbenches
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - name: install verilator
+        run: sudo apt-get update && sudo apt-get install -y verilator
+      - name: run unit tests
+        run: make test-unit
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unit-logs
+          path: build/unit/**/*.log
+          if-no-files-found: ignore
+
+  # ------------------------------------------------ growth slots (see header)
+  archtest:
+    name: ACT / RISCOF vs Sail
+    # ENABLE IN M-11 / T-07: delete the next line once verif/riscof/ has a
+    # working DUT plugin.  See docs/guidelines/VERIFICATION_GUIDE.md section 6.
+    if: false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install riscof
+      - name: run the architectural test suite
+        run: make riscof CONFIG=s1_base
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: riscof-report, path: verif/riscof/report/}
+
+  cosim:
+    name: Spike co-simulation over RVFI
+    # ENABLE IN R-05: delete once verif/cosim/ has a working comparator.
+    if: false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: compare every retired instruction against Spike
+        run: make cosim CONFIG=s1_base
+
+  bench:
+    name: benchmarks + regression gate
+    # ENABLE IN M-07 / M-08: delete once sw/apps/ has the benchmark suite.
+    if: false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: make bench CONFIG=s1_base
+      # NFR-10: a regression over 3% blocks merge without written justification.
+      - run: make bench-compare BASELINE=origin/main
+      - uses: actions/upload-artifact@v4
+        with: {name: bench-results, path: build/bench/results.json}
+
+  # ------------------------------------------------------------------ summary
+  gate:
+    name: merge gate
+    runs-on: ubuntu-latest
+    needs: [structure, docs, lint, unit]
+    if: always()
+    steps:
+      - name: fail if any required job failed
+        run: |
+          echo "structure: ${{ needs.structure.result }}"
+          echo "docs:      ${{ needs.docs.result }}"
+          echo "lint:      ${{ needs.lint.result }}"
+          echo "unit:      ${{ needs.unit.result }}"
+          if [ "${{ contains(needs.*.result, 'failure') }}" = "true" ]; then
+            echo "::error::merge gate failed -- nothing merges red"
+            exit 1
+          fi

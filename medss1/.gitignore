@@ -1,0 +1,41 @@
+# Build output
+build/
+obj_dir/
+*.o
+*.a
+*.d
+*.elf
+*.bin
+*.hex
+
+# Simulation
+*.vcd
+*.fst
+*.wlf
+*.log
+verilator.log
+
+# FPGA
+*.jou
+*.str
+*.bit
+*.ltx
+.Xil/
+vivado*.log
+vivado*.jou
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+
+# Generated documentation intermediates
+docs/MEDS-S1-Specification.html

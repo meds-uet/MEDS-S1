@@ -1,0 +1,37 @@
+# Copyright 2026 Maktab-e-Digital Systems Lahore.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Rebuilds the specification PDF when the spec or the figures change, and
+# attaches it to the run so reviewers can read the rendered version.
+name: Docs
+
+on:
+  pull_request:
+    paths: ["specs/**", "scripts/gen_diagrams.py", "scripts/svgkit.py", "scripts/build_pdf.py"]
+  push:
+    branches: [main]
+    paths: ["specs/**", "scripts/**"]
+
+jobs:
+  build:
+    name: build specification PDF
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - name: install pandoc and chrome
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pandoc
+          # google-chrome is preinstalled on ubuntu-latest runners
+      - name: install mermaid-cli
+        run: npm install -g @mermaid-js/mermaid-cli
+      - name: build
+        env:
+          PUPPETEER_EXECUTABLE_PATH: /usr/bin/google-chrome
+        run: make docs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MEDS-S1-Specification
+          path: docs/MEDS-S1-Specification.pdf
