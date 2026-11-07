@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | WIP |
-| **Owner** | @your-github-handle |
+| **Owner** | https://github.com/zakriakhan2 |
 | **Backup** | *(assign at Phase-0 review)* |
 | **Project** | R-06 (debug module) |
 | **Spec** | SPEC §27.1 (debug); RISC-V External Debug Support Specification, DTM/DMI chapter |
