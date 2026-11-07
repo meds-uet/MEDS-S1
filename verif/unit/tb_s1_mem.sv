@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // =============================================================================
-// Author(s)    : Eman Nasar (Oct,2026)
+// Author(s)    : Eman Nasar <fatehulnasareman@gmail.com>, GitHub EmanNasar001 (Oct,2026)
 // Modified By  :
 //
 // tb_s1_mem : unit testbench for s1_mem                           [WIP -- R-02]
@@ -91,9 +91,7 @@ module tb_s1_mem
   mem_wb_t          wb_out;
   logic             wb_pend;
 
-  logic [TAG_W-1:0] oldest_tag;
   logic             sb_commit;
-  logic [TAG_W-1:0] sb_commit_tag;
 
   logic [XLEN-1:0]  chk_addr;
   logic [2:0]       chk_size;
@@ -126,9 +124,7 @@ module tb_s1_mem
     .wb_valid_o        (wb_valid),
     .wb_o              (wb_out),
     .wb_pend_o         (wb_pend),
-    .oldest_tag_i      (oldest_tag),
     .sb_commit_i       (sb_commit),
-    .sb_commit_tag_i   (sb_commit_tag),
     .chk_addr_o        (chk_addr),
     .chk_size_o        (chk_size),
     .chk_rd_o          (chk_rd),
@@ -149,10 +145,6 @@ module tb_s1_mem
     .store_err_addr_o  (store_err_addr)
   );
 
-  // oldest_tag_i is wired exactly as s1_core wires it, so this testbench
-  // cannot accidentally be kinder about ordering than the real core is.
-  assign oldest_tag = wb_valid ? wb_out.tag : mem_in.tag;
-
   `include "verif/common/s1_mem_model.svh"
 
   // ---------------------------------------------------------------------------
@@ -162,16 +154,9 @@ module tb_s1_mem
   logic [XLEN-1:0] res_addr;
   int unsigned     res_lg;
 
-  // ---------------------------------------------------------------------------
-  // Tags.  A tag must stay unique while it is uncommitted, or one sb_commit
-  // would release two buffer entries.
-  // ---------------------------------------------------------------------------
-  logic [(1<<TAG_W)-1:0] tag_busy;
-
-  function automatic int unsigned free_tag();
-    for (int unsigned t = 0; t < (1 << TAG_W); t++) if (!tag_busy[t]) return t;
-    return (1 << TAG_W);                             // none free
-  endfunction
+  // MEM passes `tag` through without reading it; a running count is enough
+  // to check that it does.
+  int unsigned tag_ctr;
 
   // ---------------------------------------------------------------------------
   // Expectation for the instruction in MEM/WB.  MEM/WB is one register, so
@@ -191,10 +176,12 @@ module tb_s1_mem
   logic [XLEN-1:0] e_amo_new;
   logic            e_bus_err;         // this read will come back with err
 
-  // Retire side: the testbench is the retire unit, so it owns sb_commit.
-  // s1_core registers it, so it arrives a cycle after the commit decision.
-  logic [TAG_W-1:0] pend_tag [16];
+  // Retire side: the testbench is WB, so it owns sb_commit.  Commit is in
+  // order and carries no tag: pend_n counts completed stores not yet
+  // committed.  A commit is sometimes issued in the very cycle the store
+  // completes -- what s1_wb does -- and sometimes later, with jitter.
   int unsigned      pend_n;
+  logic             commit_now;      // this cycle's completion was committed in-cycle
 
   int unsigned stall_cnt;
   int unsigned completions;
@@ -207,6 +194,8 @@ module tb_s1_mem
   int unsigned n_load, n_store, n_amo, n_lr, n_sc_ok, n_sc_fail;
   int unsigned n_straddle, n_fault, n_rderr, n_storeerr, n_sbfull, n_stall, n_fwd;
   int unsigned n_rderr_strad;      // a read that errored AND straddled two beats
+  int unsigned n_fence, n_fence_wait;  // fences, and cycles one was held for the drain
+  int unsigned n_commit_same;      // commits issued in the completion cycle
 
   logic [XLEN-1:0] last_st_beat;      // beat of the most recent allocation
   logic            last_st_valid;
@@ -233,7 +222,7 @@ module tb_s1_mem
   logic        gen_pending;           // mem_in is presented and not yet accepted
   logic        gen_off;               // stop issuing entirely, so a drain drains
   int unsigned gen_lo_page, gen_hi_page;
-  logic        gen_atomics, gen_rderr, gen_wrerr, gen_pairs;
+  logic        gen_atomics, gen_rderr, gen_wrerr, gen_pairs, gen_fences;
   int unsigned pair_state;            // 1 = an LR has been issued, SC next
   int unsigned pair_pg, pair_off, pair_lg;
 
@@ -247,7 +236,7 @@ module tb_s1_mem
   // One cycle: look at what the cycle did, then set up the next one
   // ---------------------------------------------------------------------------
   task automatic observe();
-    logic accept, did_complete;
+    logic accept, did_complete, amo_wrote;
 
     // ---- the query is a pure function of the instruction in MEM ------------
     check ("chk_addr",  chk_addr, mem_in.mem_addr);
@@ -293,10 +282,12 @@ module tb_s1_mem
       n_storeerr++;
     end
     if (sb_full) n_sbfull++;
+    if (wb_pend && e_live && (e_in.sys_op == SYS_FENCE || e_in.sys_op == SYS_FENCE_I)) n_fence_wait++;
     if (mem_valid && !mem_ready) n_stall++;
 
     // ---- completion ---------------------------------------------------------
     did_complete = wb_valid;
+    amo_wrote    = 1'b0;
     if (wb_valid) begin
       check1("flush blocks completion", flush, 1'b0);
       check1("something was in MEM/WB", e_live, 1'b1);
@@ -309,8 +300,10 @@ module tb_s1_mem
 
       // Deferred AMO write: it happens only if the access did not fault, which
       // is exactly the condition the RTL allocates its buffer entry under.
-      if (e_live && e_amox && e_is_read && !wb_out.exc)
+      if (e_live && e_amox && e_is_read && !wb_out.exc) begin
         prog_write(e_pg, e_off, e_lg, e_amo_new);
+        amo_wrote = 1'b1;
+      end
 
       // LR arms the reservation; a clear from an SC accepted this cycle wins,
       // so the clear is applied after this in install_expectation().
@@ -320,17 +313,22 @@ module tb_s1_mem
         res_lg    = e_lg;
       end
 
-      // Retire: release the tag, and queue the store-buffer commit for the
-      // next cycle, the way s1_core registers it.
-      if (e_live) begin
-        if (wb_out.sb_alloc) begin
-          if (pend_n < 16) begin
-            pend_tag[pend_n] = wb_out.tag;
-            pend_n++;
-          end
-        end else begin
-          tag_busy[wb_out.tag] = 1'b0;
-        end
+      // A FENCE is only ever shown to WB with the store buffer empty, so WB
+      // never has a reason to refuse it.  One that arrived excepted traps
+      // instead, and need not wait.
+      if ((wb_out.sys_op == SYS_FENCE || wb_out.sys_op == SYS_FENCE_I) && !wb_out.exc) begin
+        check1("fence completes only with the buffer empty", sb_empty, 1'b1);
+        check1("fence completes only with no store on the bus", bus_busy && bus_we && !rsp_valid, 1'b0);
+        n_fence++;
+      end
+
+      // Retire: a committed store is now owed a commit, unless drive() already
+      // issued it in this cycle.
+      if (e_live && wb_out.sb_alloc && !commit_now) begin
+        pend_n++;
+        // The value WB saw: in the flush phase prog[], and so e_amo_new,
+        // no longer describe memory.  check_completion verifies it elsewhere.
+        cq_push(e_pg, e_off, e_lg, wb_out.mem_wdata);
       end
       e_live = 1'b0;
     end
@@ -340,7 +338,9 @@ module tb_s1_mem
       check1("wb_pend", wb_pend, e_live && !did_complete);
 
     // ---- a drained buffer really is drained --------------------------------
-    if (scoreboard && sb_empty && !bus_busy && pend_n == 0 && !e_live) begin
+    // Not in the cycle an AMO completes: prog[] has its write already, and
+    // its buffer entry is only allocated on this edge.
+    if (scoreboard && sb_empty && !bus_busy && pend_n == 0 && !e_live && !amo_wrote) begin
       check1("empty and full disagree", sb_empty && sb_full, 1'b0);
       check_drained();
     end
@@ -389,18 +389,26 @@ module tb_s1_mem
     r0        = $urandom;
     req_ready = (r0[2:0] != 3'd0);                   // ready 7 cycles in 8
 
-    // ---- the retire unit's store-buffer commit -----------------------------
-    sb_commit     = 1'b0;
-    sb_commit_tag = '0;
-    if (pend_n > 0) begin
-      r1 = $urandom;
+    // ---- WB's store-buffer commit ------------------------------------------
+    // Settle first: wb_valid depends on the response driven above.  The
+    // in-cycle commit is what s1_wb does, and is the case where an AMO
+    // allocates and is committed on the same edge.  It is left out of the
+    // flush phase, whose flush is decided after this point.
+    #1;
+    sb_commit  = 1'b0;
+    commit_now = 1'b0;
+    r1 = $urandom;
+    if (pend_n > 0 && !flush) begin                  // WB commits nothing in a flush
       if (r1[1:0] != 2'd0) begin                     // a little jitter
-        sb_commit     = 1'b1;
-        sb_commit_tag = pend_tag[0];
-        tag_busy[pend_tag[0]] = 1'b0;
-        for (int unsigned i = 0; i + 1 < 16; i++) pend_tag[i] = pend_tag[i+1];
+        sb_commit = 1'b1;
         pend_n--;
+        cq_commit();
       end
+    end else if (scoreboard && wb_valid && wb_out.sb_alloc && r1[2]) begin
+      sb_commit  = 1'b1;
+      commit_now = 1'b1;
+      n_commit_same++;
+      cmem_write(e_pg, e_off, e_lg, wb_out.mem_wdata);
     end
 
     // ---- next instruction --------------------------------------------------
@@ -412,11 +420,8 @@ module tb_s1_mem
     end
     if (gen_pending) return;                         // frozen until accepted
 
-    t = free_tag();
-    if (t >= (1 << TAG_W)) begin
-      mem_valid = 1'b0;                              // no tag free: let things retire
-      return;
-    end
+    t = tag_ctr;
+    tag_ctr++;
 
     r2 = $urandom; r3 = $urandom; r4 = $urandom;
     r5 = $urandom; r6 = $urandom; r7 = $urandom;
@@ -457,7 +462,6 @@ module tb_s1_mem
       pair_state      = 0;
       mem_valid       = 1'b1;
       gen_pending     = 1'b1;
-      tag_busy[t]     = 1'b1;
       return;
     end
 
@@ -523,17 +527,19 @@ module tb_s1_mem
       mem_in.mem_size   = ls_size_e'(lg);
     end
 
-    // one instruction in 8 is neither a load nor a store
+    // one instruction in 8 is neither a load nor a store, and when fences
+    // are on, a quarter of those are FENCE or FENCE.I
     if (r4[6:4] == 3'd0) begin
       mem_in.is_load  = 1'b0;
       mem_in.is_store = 1'b0;
       mem_in.amo_op   = AMO_NONE;
       pair_state      = 0;
+      if (gen_fences && r6[1:0] == 2'd0)
+        mem_in.sys_op = r6[2] ? SYS_FENCE_I : SYS_FENCE;
     end
 
     mem_valid   = 1'b1;
     gen_pending = 1'b1;
-    tag_busy[t] = 1'b1;
   endtask
 
   task automatic step();
@@ -552,7 +558,7 @@ module tb_s1_mem
   initial begin
     logic [31:0] seed;
 
-    $display("=== tb_s1_mem : XLEN=%0d TAG_W=%0d STORE_BUF_N=%0d ===", XLEN, TAG_W, SBN);
+    $display("=== tb_s1_mem : XLEN=%0d STORE_BUF_N=%0d ===", XLEN, SBN);
 
     // Both memories start identical, and not all zero: a load that returns 0
     // because nothing happened would otherwise look correct.
@@ -561,6 +567,7 @@ module tb_s1_mem
         seed = $urandom;
         prog[pg][o] = seed[7:0];
         phys[pg][o] = seed[7:0];
+        cmem[pg][o] = seed[7:0];
       end
 
     n_load = 0; n_store = 0; n_amo = 0; n_lr = 0; n_sc_ok = 0; n_sc_fail = 0;
@@ -579,7 +586,11 @@ module tb_s1_mem
     mem_in      = '0;
     mem_in.amo_op = AMO_NONE;
     sb_commit   = 1'b0;
-    sb_commit_tag = '0;
+    commit_now  = 1'b0;
+    cq_n        = 0;
+    tag_ctr     = 0;
+    n_fence = 0; n_fence_wait = 0; n_commit_same = 0;
+    gen_fences  = 1'b0;
     req_ready   = 1'b1;
     rsp_valid   = 1'b0;
     rsp         = '0;
@@ -594,7 +605,6 @@ module tb_s1_mem
     res_valid   = 1'b0;
     res_addr    = '0;
     res_lg      = 0;
-    tag_busy    = '0;
     e_live      = 1'b0;
     pend_n      = 0;
     stall_cnt   = 0;
@@ -642,6 +652,7 @@ module tb_s1_mem
     phase = "phase3 atomics";
     ctx   = "phase3 atomics";
     gen_lo_page = 0; gen_hi_page = 0; gen_atomics = 1'b1; gen_pairs = 1'b1;
+    gen_fences  = 1'b1;
     repeat (4000) step();
 
     // --- phase 4: ordering regions, faults and PMP denial -------------------
@@ -673,6 +684,8 @@ module tb_s1_mem
     // always comes back -- a stage that wedges after a flush is a dead core.
     phase = "phase6 flush";
     ctx   = "phase6 flush";
+    for (int unsigned pg = 0; pg < NPAGE; pg++)
+      for (int unsigned o = 0; o < PGSZ; o++) cmem[pg][o] = phys[pg][o];
     gen_off     = 1'b0;
     scoreboard  = 1'b0;
     gen_atomics = 1'b1;
@@ -688,8 +701,8 @@ module tb_s1_mem
         flush = 1'b0;
         gen_pending = 1'b0;
         res_valid   = 1'b0;
-        tag_busy    = '0;
         pend_n      = 0;
+        cq_n        = 0;
         e_live      = 1'b0;
         begin
           int unsigned waited;
@@ -711,12 +724,16 @@ module tb_s1_mem
     phase = "phase6 recovery";
     ctx   = "phase6 recovery";
     flush = 1'b1; step(); flush = 1'b0;
+    pend_n = 0;
+    cq_n   = 0;
     gen_off = 1'b1;
     repeat (400) step();
+    // Every store WB committed reached memory, and nothing it did not.
+    check1("flushed: sb empty", sb_empty, 1'b1);
+    check_committed();
     for (int unsigned pg = 0; pg < NPAGE; pg++)
       for (int unsigned o = 0; o < PGSZ; o++) prog[pg][o] = phys[pg][o];
     res_valid   = 1'b0;
-    tag_busy    = '0;
     pend_n      = 0;
     e_live      = 1'b0;
     gen_pending = 1'b0;
@@ -741,6 +758,8 @@ module tb_s1_mem
              n_straddle, n_fault, n_rderr, n_rderr_strad, n_storeerr);
     $display("            fwd_hit=%0d sb_full=%0d backpressure=%0d instr=%0d",
              n_fwd, n_sbfull, n_stall, completions);
+    $display("            fence=%0d fence_wait_cycles=%0d same_cycle_commit=%0d",
+             n_fence, n_fence_wait, n_commit_same);
 
     cover_min("instructions", completions, 2000);
     cover_min("loads",        n_load,      1000);
@@ -757,6 +776,9 @@ module tb_s1_mem
     cover_min("forward hits", n_fwd,         50);
     cover_min("buffer full",  n_sbfull,      50);
     cover_min("backpressure", n_stall,      500);
+    cover_min("fences",       n_fence,      100);
+    cover_min("fence waits",  n_fence_wait,  50);
+    cover_min("same-cycle commits", n_commit_same, 200);
 
     // ---------------------------------------------------------------------------
     if (errors == 0) begin

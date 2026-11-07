@@ -3,11 +3,11 @@
 | | |
 |---|---|
 | **Status** | WIP — unit- and integration-verified |
-| **Authorship** | see the file header (`Author(s)` / `Modified By`) — CODING_STANDARD.md §5 |
+| **Authorship** | Eman Nasar (fatehulnasareman@gmail.com, GitHub EmanNasar001) — see the file header |
 | **Project** | R-02 (load/store unit, store buffer, PMP and atomics) |
 | **Spec** | SPEC §7.4, §11, §14, §8.2; INTERFACES.md §1.5, §2, §9 (P1–P3); RISC-V A |
 | **Source** | `rtl/core/s1_mem.sv` |
-| **Testbench** | `verif/unit/tb_s1_mem.sv` (4,139,870 checks), plus the integration testbench that lands with `s1_core` |
+| **Testbench** | `verif/unit/tb_s1_mem.sv` (4,546,961 checks), plus the integration testbench that lands with `s1_core` |
 
 ## Purpose
 
@@ -27,10 +27,9 @@ register and produces one `mem_wb_t` per instruction.
 | `priv_i` | in | `priv_lvl_e` | effective data privilege | `mstatus.MPRV` already applied |
 | `mem_valid_i` / `mem_ready_o` | in / out | 1 | EX/MEM handshake | EX holds `mem_i` until `ready` (R-C10); `ready` is low during `flush_i` and never depends on `dmem_req_ready_i` |
 | `mem_i` | in | `ex_mem_t` | EX/MEM register | |
-| `wb_valid_o`, `wb_o` | out | 1, `mem_wb_t` | MEM/WB | one per instruction; **no ready** |
-| `wb_pend_o` | out | 1 | MEM/WB holds a read the bus still owes | the hazard unit and CSR serialisation need this — without it a load in flight is invisible to them whenever memory latency exceeds one cycle |
-| `oldest_tag_i` | in | `TAG_W` | oldest in-flight tag | holds non-idempotent reads back (P1) |
-| `sb_commit_i`, `sb_commit_tag_i` | in | 1, `TAG_W` | a write retired | one per cycle |
+| `wb_valid_o`, `wb_o` | out | 1, `mem_wb_t` | MEM/WB | one per instruction; **no ready** — WB commits whatever it is shown (see *Fences*) |
+| `wb_pend_o` | out | 1 | MEM/WB holds something not finished: a read the bus still owes, or a FENCE waiting for the store buffer | the hazard unit and CSR serialisation need this — without it a load in flight is invisible to them whenever memory latency exceeds one cycle |
+| `sb_commit_i` | in | 1 | WB committed a store | at most one per cycle, in program order; commits the oldest uncommitted entry. Only for an instruction shown on `wb_o` with `sb_alloc` set, and never while `flush_i` is high. May arrive in the same cycle the entry is allocated (an AMO completing), so **no delay is needed** in `s1_core` |
 | `chk_*_o` | out | — | the access in MEM, as a query | **answered combinationally in the same cycle** |
 | `pma_i`, `pma_fault_i`, `pmp_allow_i` | in | `pma_t`, 1, 1 | the two checkers' answers | both checkers are **outside this core** |
 | `dmem_*` | out/in | I2 MEM-REQ | D$ port | `valid` never depends on `ready`; payload stable while stalled; `rsp_ready` constant 1 |
@@ -68,7 +67,16 @@ comes from its youngest writer; bytes nobody covers come from the bus, and only 
 uncovered byte are requested. A straddling access is two requests, low beat first.
 
 **P1 and P2.** A read from a `!idempotent` or `strong_order` region waits for an empty store buffer
-and never merges. A `!idempotent` read also waits until it is the oldest in flight.
+and never merges. A `!idempotent` read also waits until it is the oldest in flight. Issue is in
+order and WB holds no state, so that is simply "MEM/WB is empty" (`!mw_valid_q`) — an entry
+completing this cycle still counts, because it can still trap. No tag is involved.
+
+**Fences.** A FENCE or FENCE.I is held in MEM/WB, with `wb_pend_o` high, until the store buffer is
+empty, and only then shown to WB. Everything older has already committed, so the buffer holds only
+entries that are draining, and nothing younger can allocate while the fence occupies MEM/WB, so the
+wait always ends. Holding it here rather than in WB is why MEM/WB needs no ready: the store buffer
+is MEM's, so MEM is where "drained" is known. `s1_wb`'s `fence_wait` can never be true and can be
+deleted.
 
 **LR/SC.** LR records `{address, size}` when it completes. SC checks that reservation in MEM:
 without an exact match it fails (`result = 1`) without touching memory and without faulting. Every
@@ -78,8 +86,15 @@ SC clears the reservation, and so does `flush_i`.
 committed store-buffer head, then the read in MEM. Draining before new reads keeps a committed MMIO
 write from being starved by a loop of loads. A presented request is frozen until accepted (R-C10).
 
-**Store buffer.** Shift register, entry 0 oldest; committed entries are always a prefix. Each edge
-applies commit, pop, flush and allocate, in that order.
+**Store buffer.** A circular buffer: `sb_head_q` is the oldest entry, `sb_cnt_q` entries are live,
+and the oldest `sb_ncom_q` of them are committed. Commit is in order, so the count is all that
+records it: no tag per entry, no associative sweep. An entry is written once, when allocated at the
+tail, and never moves. Each edge applies pop (advance the head), commit (`ncom + 1`, which also
+covers an AMO allocated in the same cycle), flush (`cnt = ncom`: drop the uncommitted
+tail) and allocate, in that order. Forwarding visits live entries oldest first without a rotator:
+entries at or above the head are older than those that wrapped below it, and within each run
+physical order is age order, so it is two static passes, `[head, N)` then `[0, head)`.
+`STORE_BUF_N` need not be a power of two.
 
 ## Exceptions and errors
 
@@ -98,8 +113,8 @@ All but the last are precise. A write's bus error arrives after retire and canno
 | Layer | Status | Where |
 |---|---|---|
 | Lint | clean once the shared types are available | `make lint` |
-| Unit test | `tb_s1_mem` — 4,139,870 checks over 13,425 instructions | `make test-unit TB=s1_mem` |
-| Mutation | 21 of 21 lint-clean mutants caught | `rtl/core/s1_mem.sv` |
+| Unit test | `tb_s1_mem` — 4,546,961 checks over 13,291 instructions, Verilator 5.020 | `make test-unit TB=s1_mem` |
+| Mutation | 12 of 12 mutants of the new logic caught (fence hold, commit count, flush, head/tail pointers, forwarding order, P1) | `rtl/core/s1_mem.sv` |
 | Integration | every retirement compared against spike, over the whole pipeline | the integration testbench that lands with `s1_core` |
 | Co-simulation, arch tests | not yet | |
 
@@ -119,12 +134,15 @@ address or written with the wrong byte enables — none of which a forwarding-on
 Each 4 KiB page in the testbench's map carries a different PMA, so one random stream reaches every
 path: misaligned (beat-straddling) accesses, non-idempotent and strongly-ordered ordering stalls,
 regions that refuse atomics, a PMP that denies writes, an unmapped hole, and a bus that errors on a
-read, on a *straddling* read, or on a drained write. `oldest_tag_i` is wired exactly as `s1_core`
-wires it, so the testbench cannot be kinder about ordering than the real core is.
+read, on a *straddling* read, or on a drained write. The testbench plays WB: it commits each store
+either in the very cycle it completes (what `s1_wb` does, and the AMO case that used to need a
+delay in `s1_core`) or later, with jitter. FENCE and FENCE.I are mixed in, and a fence shown to WB
+with anything still buffered or a write still on the bus is a failure.
 
 Two properties are checked directly rather than through their data effect, because neither has one.
 P1 — a non-idempotent read is never speculative — only changes *timing*, so the testbench asserts
-the ordering rule itself: such a read may only be accepted when nothing older is still completing.
+the ordering rule itself: such a read may only be accepted when MEM/WB was empty, neither
+completing nor pending.
 And `store_err_o` is imprecise by construction, so the write-error page is the one place the two
 memory models are *meant* to diverge, and it is excluded from the byte comparison rather than
 papered over.
@@ -139,9 +157,10 @@ Because the stimulus is random, the coverage counts are **asserted, not printed*
 
 | | | | |
 |---|---|---|---|
-| loads 5,145 | stores 5,058 | AMOs 604 | LR 452 |
-| SC success 111 | SC failure 396 | straddling 971 | faults 1,276 |
-| read bus errors 67 (8 of them straddling) | write bus errors 150 | forwarding hits 678 | buffer-full cycles 3,940 |
+| loads 4,994 | stores 5,107 | AMOs 573 | LR 513 |
+| SC success 94 | SC failure 406 | straddling 905 | faults 1,291 |
+| read bus errors 78 (9 of them straddling) | write bus errors 139 | forwarding hits 616 | buffer-full cycles 3,580 |
+| fences 303 | fence-wait cycles 1,331 | same-cycle commits 1,685 | |
 
 **Integration** then runs an RV64I program and a C sorting workload through the whole pipeline with
 every retirement compared against spike on RVFI, under random I$/D$ backpressure and latency.
@@ -156,9 +175,11 @@ Two bugs that testing found and this version fixes:
 **What neither layer reaches.** The unit testbench answers `pma_i` / `pmp_allow_i` from its own map,
 so it proves what MEM does with a checker's answer, not that the checkers are right — PMA belongs to
 the generated decoder and PMP to R-02's checker, each with its own testbench. Zicbom is untested
-because the module does not implement it. Flush is exercised for liveness and for "nothing completes
-during a flush", but its data effects are not scoreboarded: a flush discards uncommitted stores, so
-the program-order model stops describing the machine.
+because the module does not implement it. Under flush, the program-order model stops describing the
+machine (a flush discards uncommitted stores), so the flush phase checks liveness, "nothing completes
+during a flush", and a third memory model instead: `cmem[]`, every store WB committed, applied in
+commit order. After the phase drains, `phys[]` must equal it byte for byte, which proves a flush
+keeps every committed store and nothing else. Loads are not scoreboarded in that phase.
 
 ## Known limitations
 
@@ -170,6 +191,37 @@ the program-order model stops describing the machine.
 - **One outstanding I2 request.** With a slower D$, throughput is one access per hit latency.
 - **Critical path:** the external checks → `mem_ready_o` / `dmem_req_valid_o`, and I2 `rdata` →
   merge → extend → `wb_o`.
+
+## Proposal: trap misaligned accesses instead of splitting them
+
+**For a ruling.** Today an access in a region without `align_natural` may straddle two I2 beats, and
+the hardware splits it. Everything below exists only for that, because `WIN_W = 2*XLEN`:
+
+| Removed by trapping | Now | After |
+|---|---|---|
+| store-buffer entry data / byte mask | 128 b / 16 b | 64 b / 8 b — about 72 b × `STORE_BUF_N` flops |
+| forwarding | same beat, beat + 1, beat − 1 | same beat only |
+| I2 arbiter | three requesters (second beat, drain, new read) | two |
+| MEM/WB | `mw_lo_rdata_q` (64 b), `mw_need_hi_q`, `mw_hi_sent_q`, `mw_lo_got_q`, 128-b forward window | gone, window 64 b |
+| drain | `dr_lo_sent_q` / `dr_hi_sent_q`, two-part pop | one request per entry |
+| errors | `exctval` / `store_err_addr_o` choose which half failed | the access address |
+
+The SPEC does not require misaligned support (P3: alignment violations fault), and the privileged
+spec allows a misaligned load, store or AMO to raise *address-misaligned* (cause 4 / 6) so M-mode
+can emulate it. The proposal: check alignment on every access, independent of `align_natural`, and
+raise `EXC_LOAD_ADDR_MISALIGNED` / `EXC_STORE_ADDR_MISALIGNED` (not access fault, so a handler can
+tell the two apart and emulate). `pma_t.align_natural` then only needs to mean "misaligned is an
+*access fault* here" for MMIO, or can go. The cost is software: misaligned accesses become slow
+(trap + emulate), which matters only for code that does them on purpose. Not implemented until
+ruled on.
+
+## Changes this asks of other PRs
+
+- **#37 (`s1_core`):** drop `oldest_tag` and the `sb_commit_q` / `sb_commit_tag_q` delay; wire
+  `s1_wb.sb_commit_o` straight to `sb_commit_i`. `sb_commit_tag_o` is no longer used.
+- **#21 (`s1_wb`):** `fence_wait` can never be true now; delete it (and `sb_empty_i`).
+- **#14 (`s1_pkg`):** MEM no longer reads `tag`. If nothing else does, `tag` / `TAG_W` can leave
+  `ex_mem_t` and `mem_wb_t`. MEM still copies the field through while it exists.
 
 ## Open questions
 

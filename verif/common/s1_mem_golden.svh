@@ -2,7 +2,7 @@
 // Licensed under the Apache License, Version 2.0, see LICENSE file for details.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Author(s)    : Eman Nasar (Oct,2026)
+// Author(s)    : Eman Nasar <fatehulnasareman@gmail.com>, GitHub EmanNasar001 (Oct,2026)
 // Modified By  :
 //
 // s1_mem_golden.svh : the expectation model for tb_s1_mem.
@@ -133,12 +133,10 @@
                     mem_in.mem_addr);
 
     // P1 (INTERFACES.md 9): a non-idempotent read is never speculative, so it
-    // may only be accepted when it is the oldest instruction in the machine --
-    // nothing older can still be completing in the same cycle.
-    // Gated on the scoreboard: the flush phase resets the tag bookkeeping this
-    // rests on, so tags there may legitimately repeat.
+    // may only be accepted when it is the oldest instruction in the machine:
+    // MEM/WB must have been empty -- not completing, not pending.
     if (scoreboard && e_is_read && !p.idempotent)
-      check1("P1: non-idempotent read not speculative", wb_valid, 1'b0);
+      check1("P1: non-idempotent read not speculative", wb_valid || wb_pend, 1'b0);
 
     if (e_is_read && !sb_empty && last_st_valid
         && (mem_in.mem_addr >> OFF_W) == last_st_beat)

@@ -3,18 +3,21 @@
 // Licensed under the Apache License, Version 2.0, see LICENSE file for details.
 // SPDX-License-Identifier: Apache-2.0
 //
+// Author(s)    : Eman Nasar <fatehulnasareman@gmail.com>, GitHub EmanNasar001 (Oct,2026)
+// Modified By  :
+//
 // s1_mem       : MEM stage -- D$ access, store buffer, AMO/LR/SC  [WIP -- R-02]
 // Description  :
 // Takes one instruction per cycle from EX/MEM.  Reads are fetched over I2
 // MEM-REQ and merged byte-wise with pending stores; writes enter a commit-gated
-// store buffer and reach memory only after retire.  PMP and PMA are answered by
-// checkers outside the core, through the chk_* query.  Owns the MEM/WB register:
-// a read completes in the cycle its last response arrives.
+// store buffer and reach memory only after WB commits them.  PMP and PMA are
+// answered by checkers outside the core, through the chk_* query.  Owns the
+// MEM/WB register: a read completes in the cycle its last response arrives,
+// and a FENCE completes once the store buffer is empty.
 // Contract and timing: docs/modules/s1_mem.md.
 //
 // Reference: SPEC 7.4, 11, 14; INTERFACES.md 1.5, 2, 9 (P1-P3); RISC-V A, PMP.
-// Testbench: core/verif/tb_s1_core.sv (integration; AMO, LR/SC, faults and straddling
-// accesses are not reached by its RV64I program).
+// Testbench: verif/unit/tb_s1_mem.sv.
 // =============================================================================
 
 module s1_mem
@@ -33,15 +36,18 @@ module s1_mem
   output logic                          mem_ready_o,
   input  ex_mem_t                       mem_i,
 
-  // MEM/WB (CB entries are allocated in ID, so WB never refuses)
+  // MEM/WB.  No ready: WB commits whatever it is shown.  The one thing WB
+  // used to wait for -- a FENCE with stores still buffered -- is held here
+  // instead, because the store buffer is MEM's.
   output logic                          wb_valid_o,
   output mem_wb_t                       wb_o,
-  output logic                          wb_pend_o,        // MEM/WB holds a read still owed by the bus
+  output logic                          wb_pend_o,        // MEM/WB holds something not finished yet
 
-  // Completion buffer
-  input  logic [TAG_W-1:0]           oldest_tag_i,   // oldest in-flight tag: WB's, else MEM's
+  // From WB: a store committed.  Commit is in order, so it is always the
+  // oldest uncommitted store-buffer entry; no tag is needed to find it.
+  // Only for an instruction shown on wb_o with sb_alloc set, in that cycle
+  // or later, and never in a cycle flush_i is high.
   input  logic                          sb_commit_i,
-  input  logic [TAG_W-1:0]           sb_commit_tag_i,
 
   // ---- Physical-memory checks, both external (SPEC 11) --------------------
   // One query describes the access in MEM; two independent checkers answer it
@@ -80,6 +86,7 @@ module s1_mem
   localparam int unsigned WIN_W      = 2 * XLEN;
   localparam int unsigned LG_W       = $clog2(OFF_W + 1);
   localparam int unsigned CNT_W      = $clog2(STORE_BUF_N + 1);
+  localparam int unsigned PTR_W      = (STORE_BUF_N > 1) ? $clog2(STORE_BUF_N) : 1;
 
   if (STORE_BUF_N < 1) begin : g_bad_sb
     $error("s1_mem: STORE_BUF_N must be at least 1");
@@ -128,6 +135,15 @@ module s1_mem
     return r;
   endfunction
 
+  // Store-buffer pointer arithmetic, modulo STORE_BUF_N (which need not be a
+  // power of two).  Both operands are below STORE_BUF_N wherever it is used.
+  function automatic logic [PTR_W-1:0] ptr_add(logic [PTR_W-1:0] p, logic [CNT_W-1:0] n);
+    logic [CNT_W:0] s;
+    s = (CNT_W+1)'(p) + (CNT_W+1)'(n);
+    if (s >= (CNT_W+1)'(STORE_BUF_N)) s = s - (CNT_W+1)'(STORE_BUF_N);
+    return PTR_W'(s);
+  endfunction
+
   // ---------------------------------------------------------------------------
   // The instruction in MEM
   // ---------------------------------------------------------------------------
@@ -142,6 +158,8 @@ module s1_mem
   assign is_lr   = (mem_i.amo_op == AMO_LR);
   assign is_sc   = (mem_i.amo_op == AMO_SC);
   assign is_amox = (mem_i.amo_op != AMO_NONE) && !is_lr && !is_sc;
+  logic is_fence;
+  assign is_fence = !mem_i.exc && ((mem_i.sys_op == SYS_FENCE) || (mem_i.sys_op == SYS_FENCE_I));
   assign rd_acc  = mem_i.is_load  || is_lr || is_amox;
   assign wr_acc  = mem_i.is_store || is_sc || is_amox;
   assign in_sext = mem_i.is_load ? mem_i.mem_signed : 1'b1;   // LR and AMO results sign-extend
@@ -187,8 +205,11 @@ module s1_mem
   assign in_ok_write = in_mem && !in_fault && (mem_i.is_store || is_sc);
 
   // ---------------------------------------------------------------------------
-  // Store buffer.  Entry 0 is the oldest.  Committed entries are always a
-  // prefix, because stores retire in the order they passed MEM.
+  // Store buffer.  A circular buffer: sb_head_q is the oldest entry and the
+  // live entries are the sb_cnt_q that follow it.  Entries are written once,
+  // when allocated, and never move.  Commit is in order, so the committed
+  // entries are always the oldest sb_ncom_q of them -- a count is all that
+  // records it.
   // ---------------------------------------------------------------------------
   logic [STORE_BUF_N-1:0][BEAT_W-1:0]    sb_beat_q;
   logic [STORE_BUF_N-1:0][OFF_W-1:0]     sb_off_q;
@@ -196,14 +217,28 @@ module s1_mem
   logic [STORE_BUF_N-1:0][WIN_BYTES-1:0] sb_mask_q;
   logic [STORE_BUF_N-1:0][WIN_W-1:0]     sb_data_q;
   logic [STORE_BUF_N-1:0][1:0]           sb_mode_q;
-  logic [STORE_BUF_N-1:0][TAG_W-1:0]  sb_idx_q;
-  logic [STORE_BUF_N-1:0]                sb_commit_q;
-  logic [CNT_W-1:0]                      sb_cnt_q;
+  logic [PTR_W-1:0]                      sb_head_q;
+  logic [CNT_W-1:0]                      sb_cnt_q;        // live entries
+  logic [CNT_W-1:0]                      sb_ncom_q;       // ... of which committed
   logic                                  dr_lo_sent_q, dr_hi_sent_q;
+
+  // Is physical entry i live?  Its age is its distance from the head.
+  logic [STORE_BUF_N-1:0] sb_live;
+  always_comb begin
+    for (int unsigned i = 0; i < STORE_BUF_N; i++) begin
+      if (i >= 32'(sb_head_q)) sb_live[i] = (i - 32'(sb_head_q)) < 32'(sb_cnt_q);
+      else                     sb_live[i] = (i + STORE_BUF_N - 32'(sb_head_q)) < 32'(sb_cnt_q);
+    end
+  end
 
   // Merge every older pending store into the read's two-beat window, oldest
   // first so the youngest writer of each byte wins.  Only idempotent regions
   // merge; the others wait for an empty buffer (order_wait).
+  //
+  // Age order without a rotator: entries at or above the head are older than
+  // the ones that wrapped below it, and inside each run physical order is age
+  // order.  So two passes over the physical entries -- first [head, N), then
+  // [0, head) -- visit the live ones oldest first.
   logic [WIN_BYTES-1:0] fwd_mask;
   logic [WIN_W-1:0]     fwd_data;
 
@@ -211,30 +246,50 @@ module s1_mem
     logic [WIN_BYTES-1:0] m;
     logic [WIN_W-1:0]     d;
     logic [BEAT_W:0]      eb, lb;
+    logic                 in_run;
     fwd_mask = '0;
     fwd_data = '0;
     lb       = {1'b0, in_beat};
-    for (int unsigned i = 0; i < STORE_BUF_N; i++) begin
-      eb = {1'b0, sb_beat_q[i]};
-      m  = '0;
-      d  = '0;
-      if (eb == lb) begin
-        m = sb_mask_q[i];
-        d = sb_data_q[i];
-      end else if (eb == lb + (BEAT_W+1)'(1)) begin
-        m = sb_mask_q[i] << BEAT_BYTES;
-        d = sb_data_q[i] << XLEN;
-      end else if (eb + (BEAT_W+1)'(1) == lb) begin
-        m = sb_mask_q[i] >> BEAT_BYTES;
-        d = sb_data_q[i] >> XLEN;
-      end
-      if (i < 32'(sb_cnt_q)) begin
-        m        = m & in_mask;
-        fwd_mask = fwd_mask | m;
-        fwd_data = (fwd_data & ~byte_expand(m)) | (d & byte_expand(m));
+    for (int unsigned pass = 0; pass < 2; pass++) begin
+      for (int unsigned i = 0; i < STORE_BUF_N; i++) begin
+        in_run = (pass == 0) ? (i >= 32'(sb_head_q)) : (i < 32'(sb_head_q));
+        eb = {1'b0, sb_beat_q[i]};
+        m  = '0;
+        d  = '0;
+        if (eb == lb) begin
+          m = sb_mask_q[i];
+          d = sb_data_q[i];
+        end else if (eb == lb + (BEAT_W+1)'(1)) begin
+          m = sb_mask_q[i] << BEAT_BYTES;
+          d = sb_data_q[i] << XLEN;
+        end else if (eb + (BEAT_W+1)'(1) == lb) begin
+          m = sb_mask_q[i] >> BEAT_BYTES;
+          d = sb_data_q[i] >> XLEN;
+        end
+        if (in_run && sb_live[i]) begin
+          m        = m & in_mask;
+          fwd_mask = fwd_mask | m;
+          fwd_data = (fwd_data & ~byte_expand(m)) | (d & byte_expand(m));
+        end
       end
     end
   end
+
+  // The head entry, which is the one that drains.
+  logic [BEAT_W-1:0]    hd_beat;
+  logic [OFF_W-1:0]     hd_off;
+  logic [LG_W-1:0]      hd_lg;
+  logic [WIN_BYTES-1:0] hd_mask;
+  logic [WIN_W-1:0]     hd_data;
+  logic [1:0]           hd_mode;
+  assign hd_beat = sb_beat_q[sb_head_q];
+  assign hd_off  = sb_off_q[sb_head_q];
+  assign hd_lg   = sb_lg_q[sb_head_q];
+  assign hd_mask = sb_mask_q[sb_head_q];
+  assign hd_data = sb_data_q[sb_head_q];
+  assign hd_mode = sb_mode_q[sb_head_q];
+
+  logic                 mw_valid_q;      // MEM/WB register, below
 
   logic need_lo, need_hi, bus_need, order_wait, head_wait;
   assign need_lo  = |(in_mask[BEAT_BYTES-1:0]         & ~fwd_mask[BEAT_BYTES-1:0]);
@@ -242,17 +297,20 @@ module s1_mem
   assign bus_need = need_lo || need_hi;
 
   // P2: a strongly-ordered read follows every older store onto the bus.
-  // P1: a non-idempotent read is never speculative, so it waits for the head.
+  // P1: a non-idempotent read is never speculative, so it waits until it is
+  // the oldest instruction in flight.  Issue is in order and WB holds no
+  // state, so the only thing that can be older is the MEM/WB entry -- even one
+  // completing this cycle, which can still trap.
   assign order_wait = in_ok_read && (!pma_i.idempotent || pma_i.strong_order) && (sb_cnt_q != '0);
-  assign head_wait  = in_ok_read && !pma_i.idempotent && (mem_i.tag != oldest_tag_i);
+  assign head_wait  = in_ok_read && !pma_i.idempotent && mw_valid_q;
 
   // ---------------------------------------------------------------------------
   // MEM/WB register
   // ---------------------------------------------------------------------------
-  logic                 mw_valid_q;
   mem_wb_t              mw_q;
   logic                 mw_read_q;       // load, LR or AMO whose value is assembled at completion
   logic                 mw_bus_q;        // ... and still waiting on I2
+  logic                 mw_fence_q;      // FENCE / FENCE.I: completes once the buffer is empty
   logic                 mw_amox_q, mw_lr_q;
   logic                 mw_need_hi_q, mw_hi_sent_q, mw_lo_got_q;
   logic [XLEN-1:0]      mw_lo_rdata_q, mw_wdata_q;
@@ -288,13 +346,21 @@ module s1_mem
 
   // AMO and LR change state MEM itself reads (a store-buffer entry, the
   // reservation) at their completion edge, so nothing enters behind them then.
+  //
+  // A FENCE is not shown to WB until every older store has reached memory.
+  // Everything older than it has already committed, so the buffer only holds
+  // entries that are draining, and nothing younger can allocate while the
+  // fence occupies MEM/WB -- the wait always ends.  Holding it here rather
+  // than in WB is what lets MEM/WB have no ready: WB commits whatever it is
+  // shown.
   logic mw_done, mw_free;
-  assign mw_done = mw_valid_q && (!mw_bus_q || read_err_now
-                                  || (mw_need_hi_q ? hi_rsp_now : lo_rsp_now));
+  assign mw_done = mw_valid_q && (mw_fence_q ? (sb_cnt_q == '0)
+                                             : (!mw_bus_q || read_err_now
+                                                || (mw_need_hi_q ? hi_rsp_now : lo_rsp_now)));
   assign mw_free = !mw_valid_q || (mw_done && !mw_amox_q && !mw_lr_q);
 
   logic dr_need_hi, pop_now;
-  assign dr_need_hi = |sb_mask_q[0][WIN_BYTES-1:BEAT_BYTES];
+  assign dr_need_hi = |hd_mask[WIN_BYTES-1:BEAT_BYTES];
   assign pop_now    = rsp_drain && (outst_hi_q || !dr_need_hi);
 
   logic sb_space;
@@ -304,7 +370,7 @@ module s1_mem
   assign port_free = !hold_q && (!outst_q || dmem_rsp_valid_i);
   assign a_want    = mw_valid_q && mw_bus_q && mw_need_hi_q && !mw_hi_sent_q && !flush_i
                      && (mw_lo_got_q || (lo_rsp_now && !dmem_rsp_i.err));
-  assign c_want    = (sb_cnt_q != '0) && sb_commit_q[0]
+  assign c_want    = (sb_ncom_q != '0)
                      && (!dr_lo_sent_q || (dr_need_hi && !dr_hi_sent_q));
   assign b_want    = in_ok_read && bus_need && !order_wait && !head_wait
                      && (!is_amox || sb_space) && mw_free && !flush_i;
@@ -320,8 +386,8 @@ module s1_mem
       new_req = mk_req(mw_q.mem_addr[XLEN-1:OFF_W], mw_q.mem_addr[OFF_W-1:0], 1'b1, mw_mask_q, '0,
                        mw_lg_q, 1'b0, mw_mode_q);
     end else if (c_go) begin
-      new_req = mk_req(sb_beat_q[0], sb_off_q[0], new_hi, sb_mask_q[0], sb_data_q[0],
-                       sb_lg_q[0], 1'b1, priv_lvl_e'(sb_mode_q[0]));
+      new_req = mk_req(hd_beat, hd_off, new_hi, hd_mask, hd_data,
+                       hd_lg, 1'b1, priv_lvl_e'(hd_mode));
     end
   end
 
@@ -367,7 +433,7 @@ module s1_mem
   always_comb begin
     mem_ready_o = !flush_i && mw_free;
     if (in_mem && !in_fault) begin
-      if (!rd_acc)     mem_ready_o = mem_ready_o && sb_space;
+      if (!rd_acc)          mem_ready_o = mem_ready_o && sb_space;
       else if (bus_need)    mem_ready_o = b_go;
       else                  mem_ready_o = mem_ready_o && !order_wait && !head_wait
                                           && (!is_amox || sb_space);
@@ -384,6 +450,7 @@ module s1_mem
       mw_q          <= '0;
       mw_read_q     <= 1'b0;
       mw_bus_q      <= 1'b0;
+      mw_fence_q    <= 1'b0;
       mw_amox_q     <= 1'b0;
       mw_lr_q       <= 1'b0;
       mw_need_hi_q  <= 1'b0;
@@ -400,7 +467,7 @@ module s1_mem
       mw_amo_op_q   <= AMO_NONE;
     end else if (accept) begin
       mw_valid_q          <= 1'b1;
-      mw_q.tag         <= mem_i.tag;
+      mw_q.tag            <= mem_i.tag;      // passed through; MEM does not use it
       mw_q.rd             <= mem_i.rd;
       mw_q.rd_we          <= mem_i.rd_we;
       mw_q.result         <= is_sc ? XLEN'(sc_skip || in_fault) : mem_i.result;
@@ -426,6 +493,7 @@ module s1_mem
       mw_q.mem_wdata      <= mem_i.mem_wdata & size_mask(in_lg);
       mw_read_q     <= in_ok_read;
       mw_bus_q      <= in_ok_read && bus_need;
+      mw_fence_q    <= is_fence;
       mw_amox_q     <= in_ok_read && is_amox;
       mw_lr_q       <= in_ok_read && is_lr;
       mw_need_hi_q  <= need_hi;
@@ -503,9 +571,10 @@ module s1_mem
     end
   end
   // An instruction in MEM/WB that is not completing this cycle.  It is past
-  // EX/MEM, so ID cannot see it there, yet its result does not exist: ID must
-  // stall a consumer of its rd, and treat the pipeline as busy for
-  // serialisation.  Only a read waiting on the bus can be in this state.
+  // EX/MEM, so ID cannot see it there, yet it has not finished: ID must stall
+  // a consumer of its rd, and treat the pipeline as busy for serialisation.
+  // Only a read waiting on the bus, or a FENCE waiting for the store buffer
+  // to drain, can be in this state.
   assign wb_pend_o = mw_valid_q && !mw_done;
 
   assign amo_alloc = wb_valid_o && mw_amox_q && !wb_o.exc;
@@ -526,8 +595,19 @@ module s1_mem
   end
 
   // ---------------------------------------------------------------------------
-  // Store buffer update: commit, pop, flush, then allocate (a store or SC in
-  // MEM, or an AMO completing in MEM/WB -- never both in one cycle).
+  // Store buffer update.  Allocation is a store or SC in MEM, or an AMO
+  // completing in MEM/WB -- never both in one cycle, and never during a flush
+  // (mem_ready_o and wb_valid_o are both low then).
+  //
+  //   pop     the head drained: advance the head
+  //   commit  one more of the oldest entries is committed.  A count, so an
+  //           AMO that allocates and is committed by WB in the same cycle is
+  //           not lost -- the commit needs no delay to find its entry.  WB only
+  //           commits an instruction MEM gave it with sb_alloc set, so there
+  //           is always an uncommitted entry for it (contract on sb_commit_i).
+  //   flush   drop the uncommitted tail: the committed ones are the oldest,
+  //           so that is just cnt = ncom
+  //   alloc   write the entry at the tail; nothing else moves
   // ---------------------------------------------------------------------------
   logic                 alloc;
   logic [BEAT_W-1:0]    al_beat;
@@ -536,7 +616,6 @@ module s1_mem
   logic [WIN_BYTES-1:0] al_mask;
   logic [WIN_W-1:0]     al_data;
   logic [1:0]           al_mode;
-  logic [TAG_W-1:0]  al_idx;
 
   always_comb begin
     alloc   = accept && in_ok_write;
@@ -546,7 +625,6 @@ module s1_mem
     al_mask = in_mask;
     al_data = in_wdata;
     al_mode = priv_i;
-    al_idx  = mem_i.tag;
     if (amo_alloc) begin
       alloc   = 1'b1;
       al_beat = mw_q.mem_addr[XLEN-1:OFF_W];
@@ -555,79 +633,22 @@ module s1_mem
       al_mask = mw_mask_q;
       al_data = WIN_W'(new_val) << (32'(mw_q.mem_addr[OFF_W-1:0]) * BYTE_W);
       al_mode = mw_mode_q;
-      al_idx  = mw_q.tag;
     end
   end
 
-  logic [STORE_BUF_N-1:0][BEAT_W-1:0]    sb_beat_d;
-  logic [STORE_BUF_N-1:0][OFF_W-1:0]     sb_off_d;
-  logic [STORE_BUF_N-1:0][LG_W-1:0]      sb_lg_d;
-  logic [STORE_BUF_N-1:0][WIN_BYTES-1:0] sb_mask_d;
-  logic [STORE_BUF_N-1:0][WIN_W-1:0]     sb_data_d;
-  logic [STORE_BUF_N-1:0][1:0]           sb_mode_d;
-  logic [STORE_BUF_N-1:0][TAG_W-1:0]  sb_idx_d;
-  logic [STORE_BUF_N-1:0]                sb_commit_d;
-  logic [CNT_W-1:0]                      sb_cnt_d, kept;
+  logic [PTR_W-1:0] sb_head_d, sb_tail;
+  logic [CNT_W-1:0] sb_cnt_d, sb_ncom_d, cnt_pop, ncom_pop;
 
   always_comb begin
-    kept        = '0;
-    sb_beat_d   = sb_beat_q;
-    sb_off_d    = sb_off_q;
-    sb_lg_d     = sb_lg_q;
-    sb_mask_d   = sb_mask_q;
-    sb_data_d   = sb_data_q;
-    sb_mode_d   = sb_mode_q;
-    sb_idx_d    = sb_idx_q;
-    sb_commit_d = sb_commit_q;
-    sb_cnt_d    = sb_cnt_q;
+    cnt_pop   = sb_cnt_q  - CNT_W'(pop_now);
+    ncom_pop  = sb_ncom_q - CNT_W'(pop_now);
+    sb_head_d = pop_now ? ptr_add(sb_head_q, CNT_W'(1)) : sb_head_q;
+    sb_tail   = ptr_add(sb_head_q, sb_cnt_q);           // a pop moves both ends of this sum
 
-    for (int unsigned i = 0; i < STORE_BUF_N; i++) begin
-      if (sb_commit_i && i < 32'(sb_cnt_q) && !sb_commit_q[i] && sb_idx_q[i] == sb_commit_tag_i) begin
-        sb_commit_d[i] = 1'b1;
-      end
-    end
+    sb_ncom_d = ncom_pop + CNT_W'(sb_commit_i);
 
-    if (pop_now) begin
-      for (int unsigned i = 0; i + 1 < STORE_BUF_N; i++) begin
-        sb_beat_d[i]   = sb_beat_d[i+1];
-        sb_off_d[i]    = sb_off_d[i+1];
-        sb_lg_d[i]     = sb_lg_d[i+1];
-        sb_mask_d[i]   = sb_mask_d[i+1];
-        sb_data_d[i]   = sb_data_d[i+1];
-        sb_mode_d[i]   = sb_mode_d[i+1];
-        sb_idx_d[i]    = sb_idx_d[i+1];
-        sb_commit_d[i] = sb_commit_d[i+1];
-      end
-      sb_commit_d[STORE_BUF_N-1] = 1'b0;
-      sb_cnt_d = sb_cnt_d - CNT_W'(1);
-    end
-
-    if (flush_i) begin
-      for (int unsigned i = 0; i < STORE_BUF_N; i++) begin
-        if (i < 32'(sb_cnt_d) && sb_commit_d[i] && 32'(kept) == i) kept = CNT_W'(i + 1);
-      end
-      sb_cnt_d = kept;
-    end
-
-    if (alloc) begin
-      for (int unsigned i = 0; i < STORE_BUF_N; i++) begin
-        if (32'(sb_cnt_d) == i) begin
-          sb_beat_d[i]   = al_beat;
-          sb_off_d[i]    = al_off;
-          sb_lg_d[i]     = al_lg;
-          sb_mask_d[i]   = al_mask;
-          sb_data_d[i]   = al_data;
-          sb_mode_d[i]   = al_mode;
-          sb_idx_d[i]    = al_idx;
-          sb_commit_d[i] = 1'b0;
-        end
-      end
-      sb_cnt_d = sb_cnt_d + CNT_W'(1);
-    end
-
-    for (int unsigned i = 0; i < STORE_BUF_N; i++) begin
-      if (i >= 32'(sb_cnt_d)) sb_commit_d[i] = 1'b0;
-    end
+    if (flush_i) sb_cnt_d = sb_ncom_d;
+    else         sb_cnt_d = cnt_pop + CNT_W'(alloc);
   end
 
   always_ff @(posedge clk_i or negedge rst_ni) begin
@@ -638,21 +659,23 @@ module s1_mem
       sb_mask_q    <= '0;
       sb_data_q    <= '0;
       sb_mode_q    <= '0;
-      sb_idx_q     <= '0;
-      sb_commit_q  <= '0;
+      sb_head_q    <= '0;
       sb_cnt_q     <= '0;
+      sb_ncom_q    <= '0;
       dr_lo_sent_q <= 1'b0;
       dr_hi_sent_q <= 1'b0;
     end else begin
-      sb_beat_q   <= sb_beat_d;
-      sb_off_q    <= sb_off_d;
-      sb_lg_q     <= sb_lg_d;
-      sb_mask_q   <= sb_mask_d;
-      sb_data_q   <= sb_data_d;
-      sb_mode_q   <= sb_mode_d;
-      sb_idx_q    <= sb_idx_d;
-      sb_commit_q <= sb_commit_d;
-      sb_cnt_q    <= sb_cnt_d;
+      if (alloc) begin
+        sb_beat_q[sb_tail] <= al_beat;
+        sb_off_q[sb_tail]  <= al_off;
+        sb_lg_q[sb_tail]   <= al_lg;
+        sb_mask_q[sb_tail] <= al_mask;
+        sb_data_q[sb_tail] <= al_data;
+        sb_mode_q[sb_tail] <= al_mode;
+      end
+      sb_head_q <= sb_head_d;
+      sb_cnt_q  <= sb_cnt_d;
+      sb_ncom_q <= sb_ncom_d;
       if (pop_now) begin
         dr_lo_sent_q <= 1'b0;
         dr_hi_sent_q <= 1'b0;
@@ -666,8 +689,8 @@ module s1_mem
   assign sb_empty_o       = (sb_cnt_q == '0);
   assign sb_full_o        = (32'(sb_cnt_q) == STORE_BUF_N);
   assign store_err_o      = rsp_drain && dmem_rsp_i.err;
-  assign store_err_addr_o = outst_hi_q ? {sb_beat_q[0] + BEAT_W'(1), OFF_W'(0)}
-                                       : {sb_beat_q[0], sb_off_q[0]};
+  assign store_err_addr_o = outst_hi_q ? {hd_beat + BEAT_W'(1), OFF_W'(0)}
+                                       : {hd_beat, hd_off};
 
   // id: one outstanding request.  errcode: encoding undefined in I2.  aq/rl
   // need no action: one access in flight and a FIFO store buffer already

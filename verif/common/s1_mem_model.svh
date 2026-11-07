@@ -2,7 +2,7 @@
 // Licensed under the Apache License, Version 2.0, see LICENSE file for details.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Author(s)    : Eman Nasar (Oct,2026)
+// Author(s)    : Eman Nasar <fatehulnasareman@gmail.com>, GitHub EmanNasar001 (Oct,2026)
 // Modified By  :
 //
 // s1_mem_model.svh : the environment tb_s1_mem checks s1_mem against.
@@ -131,6 +131,54 @@
   task automatic prog_write(input int unsigned pg, input int unsigned off,
                             input int unsigned lg, input logic [XLEN-1:0] data);
     for (int unsigned k = 0; k < (32'(1) << lg); k++) prog[pg][off + k] = data[k*BYTE_W +: BYTE_W];
+  endtask
+
+  // ---------------------------------------------------------------------------
+  // Commit-order memory.  prog[] stops describing the machine once a flush
+  // discards uncommitted stores, so the flush phase checks this instead:
+  // every store WB commits, applied in commit order.  Completed but
+  // uncommitted stores wait in cq[]; a commit applies the oldest, a flush
+  // drops the rest.  After a drain, phys[] must equal cmem[] -- which is what
+  // says a flush kept every committed store and nothing else.
+  // ---------------------------------------------------------------------------
+  logic [7:0]      cmem [NPAGE][PGSZ];
+  int unsigned     cq_pg [16], cq_off [16], cq_lg [16];
+  logic [XLEN-1:0] cq_data [16];
+  int unsigned     cq_n;
+
+  task automatic cmem_write(input int unsigned pg, input int unsigned off,
+                            input int unsigned lg, input logic [XLEN-1:0] data);
+    if (pg == PG_WRERR) return;                      // the bus refuses these
+    for (int unsigned k = 0; k < (32'(1) << lg); k++) cmem[pg][off + k] = data[k*BYTE_W +: BYTE_W];
+  endtask
+
+  task automatic cq_push(input int unsigned pg, input int unsigned off,
+                         input int unsigned lg, input logic [XLEN-1:0] data);
+    if (cq_n < 16) begin
+      cq_pg[cq_n] = pg; cq_off[cq_n] = off; cq_lg[cq_n] = lg; cq_data[cq_n] = data;
+      cq_n++;
+    end
+  endtask
+
+  task automatic cq_commit();
+    if (cq_n == 0) return;
+    cmem_write(cq_pg[0], cq_off[0], cq_lg[0], cq_data[0]);
+    for (int unsigned i = 0; i + 1 < 16; i++) begin
+      cq_pg[i] = cq_pg[i+1]; cq_off[i] = cq_off[i+1]; cq_lg[i] = cq_lg[i+1]; cq_data[i] = cq_data[i+1];
+    end
+    cq_n--;
+  endtask
+
+  task automatic check_committed();
+    for (int unsigned pg = 0; pg < NPAGE; pg++)
+      for (int unsigned o = 0; o < PGSZ; o++) begin
+        checks++;
+        if (phys[pg][o] !== cmem[pg][o]) begin
+          errors++;
+          $display("  FAIL committed p%0d[%0d] phys=0x%h committed=0x%h   [%s]",
+                   pg, o, phys[pg][o], cmem[pg][o], ctx);
+        end
+      end
   endtask
 
   // ---------------------------------------------------------------------------
