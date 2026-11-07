@@ -3,7 +3,7 @@
 // Licensed under the Apache License, Version 2.0, see LICENSE file for details.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Author(s)    : integration (Oct,2026)
+// Author(s)    : Eman Nasar <fatehulnasareman@gmail.com>, GitHub EmanNasar001 (Oct,2026)
 // Modified By  :
 //
 // s1_wb        : WB stage -- the architectural commit point   [WIP -- T-02]
@@ -29,10 +29,10 @@
 // cannot have already written memory.
 //
 // Interrupts are taken here too, in place of a commit, so mepc names an
-// instruction that has not executed.
+// instruction that has not executed.  xRET legality is checked here as well:
+// this is the last point before privilege changes.
 //
-// Reference: SPEC 7.5, 10.3, 28.2.  Testbench: core/verif/tb_s1_core.sv (integration;
-// interrupts are not yet exercised).
+// Reference: SPEC 7.5, 10.3, 28.2.  Testbench: verif/unit/tb_s1_wb.sv.
 // =============================================================================
 
 module s1_wb
@@ -46,16 +46,12 @@ module s1_wb
   input  logic                  irq_valid_i,
   input  logic [5:0]            irq_code_i,
 
-  // ---- Fence: hold the commit until memory has drained --------------------
-  input  logic                  sb_empty_i,
-
   // ---- Architectural state -------------------------------------------------
   output rf_wr_t                rf_wr_o,
   output csr_upd_t              csr_commit_o,
   output logic                  instret_o,      // minstret: retired, not trapped
 
-  output logic                  sb_commit_o,
-  output logic [TAG_W-1:0]      sb_commit_tag_o,
+  output logic                  sb_commit_o,    // commits MEM's oldest uncommitted store
 
   // ---- Flush and redirect --------------------------------------------------
   output logic                  flush_o,
@@ -82,20 +78,30 @@ module s1_wb
   output logic                  perf_store_retired_o
 );
 
-  // A fence commits only once the store buffer has drained (INTERFACES.md 1.5
-  // with no coprocessor attached, so the store buffer is the whole of it).
-  // FENCE.I additionally redirects, which is what refreshes the frontend.
-  logic is_fence, fence_wait;
-  assign is_fence   = (wb_i.sys_op == SYS_FENCE) || (wb_i.sys_op == SYS_FENCE_I);
-  assign fence_wait = wb_valid_i && is_fence && !sb_empty_i;
+  // A FENCE arrives only once the store buffer has drained: s1_mem holds it
+  // in MEM/WB until then, so WB never has to wait for it.
+
+  // xRET legality.  This core has M- and U-mode only (no S-mode in v1, no
+  // debug mode), so SRET and DRET are always illegal, and MRET only from M.
+  // Checked here because nothing earlier is trusted to have: an xRET that
+  // got this far would otherwise raise privilege.
+  logic ret_illegal, exc;
+  logic [5:0]      exccode;
+  logic [XLEN-1:0] exctval;
+  assign ret_illegal = !wb_i.exc
+                    && ((wb_i.sys_op == SYS_SRET) || (wb_i.sys_op == SYS_DRET)
+                        || ((wb_i.sys_op == SYS_MRET) && (priv_i != PRIV_M)));
+  assign exc         = wb_i.exc || ret_illegal;
+  assign exccode     = wb_i.exc ? wb_i.exccode : EXC_ILLEGAL_INSTR;
+  assign exctval     = wb_i.exc ? wb_i.exctval : XLEN'(wb_i.instr);
 
   logic take_irq, commit_ok, trap_now;
 
   // An interrupt replaces a commit rather than following one, so mepc names an
   // instruction that has not executed.
-  assign take_irq  = wb_valid_i && irq_valid_i && !fence_wait;
-  assign commit_ok = wb_valid_i && !fence_wait && !take_irq;
-  assign trap_now  = take_irq || (commit_ok && wb_i.exc);
+  assign take_irq  = wb_valid_i && irq_valid_i;
+  assign commit_ok = wb_valid_i && !take_irq;
+  assign trap_now  = take_irq || (commit_ok && exc);
 
   assign busy_o = wb_valid_i;
 
@@ -104,10 +110,8 @@ module s1_wb
   // ---------------------------------------------------------------------------
   logic is_mret, is_refetch;
 
-  assign is_mret    = commit_ok && !wb_i.exc
-                   && ((wb_i.sys_op == SYS_MRET) || (wb_i.sys_op == SYS_SRET)
-                       || (wb_i.sys_op == SYS_DRET));
-  assign is_refetch = commit_ok && !wb_i.exc
+  assign is_mret    = commit_ok && !exc && (wb_i.sys_op == SYS_MRET);   // M-mode, by `exc`
+  assign is_refetch = commit_ok && !exc
                    && ((wb_i.sys_op == SYS_FENCE_I) || (wb_i.sys_op == SYS_SFENCE_VMA));
 
   always_comb begin
@@ -137,12 +141,12 @@ module s1_wb
       trap_req_o.exccode = irq_code_i;
       trap_req_o.epc     = wb_i.pc;
       trap_req_o.tval    = '0;
-    end else if (commit_ok && wb_i.exc) begin
+    end else if (commit_ok && exc) begin
       trap_req_o.valid   = 1'b1;
       trap_req_o.is_irq  = 1'b0;
-      trap_req_o.exccode = wb_i.exccode;
+      trap_req_o.exccode = exccode;
       trap_req_o.epc     = wb_i.pc;
-      trap_req_o.tval    = wb_i.exctval;
+      trap_req_o.tval    = exctval;
     end
   end
 
@@ -152,7 +156,7 @@ module s1_wb
   // Architectural writes -- all suppressed by a trap
   // ---------------------------------------------------------------------------
   logic commit;
-  assign commit = commit_ok && !wb_i.exc;
+  assign commit = commit_ok && !exc;
 
   assign rf_wr_o.we   = commit && wb_i.rd_we && (wb_i.rd != '0);
   assign rf_wr_o.addr = wb_i.rd;
@@ -164,8 +168,7 @@ module s1_wb
 
   // Ungated on purpose beyond the trap: gating it further would strand the
   // slot for ever, and MEM never allocates one for an access that faulted.
-  assign sb_commit_o     = commit && wb_i.sb_alloc;
-  assign sb_commit_tag_o = wb_i.tag;
+  assign sb_commit_o = commit && wb_i.sb_alloc;
 
   // A trapping instruction does not retire, so it does not count (RISC-V
   // privileged spec, minstret; ECALL and EBREAK "are not considered to
@@ -185,7 +188,7 @@ module s1_wb
     rvfi_o.valid     = commit_ok;
     rvfi_o.order     = order_i;
     rvfi_o.insn      = wb_i.instr;
-    rvfi_o.trap      = wb_i.exc;
+    rvfi_o.trap      = exc;
     rvfi_o.halt      = 1'b0;
     rvfi_o.intr      = 1'b0;
     // Privilege changes only when a trap or xRET commits, and that flushes
@@ -207,6 +210,12 @@ module s1_wb
     rvfi_o.mem.wmask = wb_i.mem_wmask;
     rvfi_o.mem.rdata = wb_i.mem_rdata;
     rvfi_o.mem.wdata = wb_i.mem_wdata;
+  end
+
+  // tag: s1_mem commits stores by count, in order, so no tag is passed on.
+  logic unused_inputs;
+  always_comb begin
+    unused_inputs = ^{wb_i.tag};
   end
 
 endmodule

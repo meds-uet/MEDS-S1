@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // =============================================================================
-// Author(s)    : Eman Nasar (Oct,2026)
+// Author(s)    : Eman Nasar <fatehulnasareman@gmail.com>, GitHub EmanNasar001 (Oct,2026)
 // Modified By  :
 //
 // tb_s1_wb : unit testbench for s1_wb                             [WIP -- T-02]
@@ -20,8 +20,9 @@
 //   1. A trap must suppress ALL THREE writes -- register file, CSR and the
 //      store-buffer commit.  Letting the store commit through is the bug the
 //      whole buffer-in-MEM-release-in-WB design exists to prevent.
-//   2. A held fence must be completely quiet AND still report busy.  Quiet but
-//      not busy is a hang: ID stops serialising and the fence is lost.
+//   2. An xRET must never raise privilege: SRET and DRET are illegal (no S-
+//      or debug mode), MRET only from M.  An illegal one traps, with the
+//      instruction in tval, and never jumps to mepc.
 //   3. An interrupt REPLACES a commit, it does not follow one, so mepc must
 //      name an instruction that has not executed and instret must not count.
 //
@@ -40,7 +41,6 @@ module tb_s1_wb
   mem_wb_t          wb;
   logic             irq_valid;
   logic [5:0]       irq_code;
-  logic             sb_empty;
   logic [XLEN-1:0]  trap_vec, mepc;
   priv_lvl_e        priv;
   logic [63:0]      order;
@@ -49,7 +49,6 @@ module tb_s1_wb
   csr_upd_t         csr_commit;
   logic             instret;
   logic             sb_commit;
-  logic [TAG_W-1:0] sb_commit_tag;
   logic             flush;
   flush_cause_e     flush_cause;
   logic             redirect_valid;
@@ -68,12 +67,10 @@ module tb_s1_wb
     .wb_i                 (wb),
     .irq_valid_i          (irq_valid),
     .irq_code_i           (irq_code),
-    .sb_empty_i           (sb_empty),
     .rf_wr_o              (rf_wr),
     .csr_commit_o         (csr_commit),
     .instret_o            (instret),
     .sb_commit_o          (sb_commit),
-    .sb_commit_tag_o      (sb_commit_tag),
     .flush_o              (flush),
     .flush_cause_o        (flush_cause),
     .redirect_valid_o     (redirect_valid),
@@ -118,11 +115,16 @@ module tb_s1_wb
   // ---------------------------------------------------------------------------
   // Golden model.  Derived from the commit rules, not from the RTL.
   //
-  // The decision is a three-way one, and the order matters: a fence that has
-  // not drained is not ready to do anything at all, so it outranks even an
-  // interrupt; an interrupt outranks the instruction's own commit.
+  // An interrupt outranks the instruction's own commit.  A FENCE never waits
+  // here: s1_mem only shows one once its store buffer is empty.
+  //
+  // xRET: privilege may only be returned from where it is held.  Modelled as
+  // a table of what is legal, not as the RTL's expression of what is not.
   // ---------------------------------------------------------------------------
-  logic             g_fence_wait, g_take_irq, g_commit_ok, g_trap_now, g_commit;
+  logic             g_take_irq, g_commit_ok, g_trap_now, g_commit;
+  logic             g_ret_ok, g_ret_bad, g_exc;
+  logic [5:0]       g_exccode;
+  logic [XLEN-1:0]  g_exctval;
   logic             g_is_mret, g_is_refetch;
   flush_cause_e     g_cause;
   logic [XLEN-1:0]  g_redirect_pc;
@@ -131,17 +133,23 @@ module tb_s1_wb
   trap_req_t        g_trap_req;
 
   task automatic golden();
-    logic is_fence;
+    // Legal xRETs on an M+U core: MRET from M.  Nothing else.
+    case (wb.sys_op)
+      SYS_MRET:           g_ret_ok = (priv == PRIV_M);
+      SYS_SRET, SYS_DRET: g_ret_ok = 1'b0;
+      default:            g_ret_ok = 1'b1;               // not an xRET
+    endcase
+    g_ret_bad    = !wb.exc && !g_ret_ok;
+    g_exc        = wb.exc || g_ret_bad;
+    g_exccode    = wb.exc ? wb.exccode : EXC_ILLEGAL_INSTR;
+    g_exctval    = wb.exc ? wb.exctval : XLEN'(wb.instr);
 
-    is_fence     = (wb.sys_op == SYS_FENCE) || (wb.sys_op == SYS_FENCE_I);
-    g_fence_wait = wb_valid && is_fence && !sb_empty;
-    g_take_irq   = wb_valid && irq_valid && !g_fence_wait;
-    g_commit_ok  = wb_valid && !g_fence_wait && !g_take_irq;
-    g_trap_now   = g_take_irq || (g_commit_ok && wb.exc);
-    g_commit     = g_commit_ok && !wb.exc;
+    g_take_irq   = wb_valid && irq_valid;
+    g_commit_ok  = wb_valid && !g_take_irq;
+    g_trap_now   = g_take_irq || (g_commit_ok && g_exc);
+    g_commit     = g_commit_ok && !g_exc;
 
-    g_is_mret    = g_commit && ((wb.sys_op == SYS_MRET) || (wb.sys_op == SYS_SRET)
-                                || (wb.sys_op == SYS_DRET));
+    g_is_mret    = g_commit && (wb.sys_op == SYS_MRET);
     g_is_refetch = g_commit && ((wb.sys_op == SYS_FENCE_I)
                                 || (wb.sys_op == SYS_SFENCE_VMA));
 
@@ -165,12 +173,12 @@ module tb_s1_wb
       g_trap_req.exccode = irq_code;
       g_trap_req.epc     = wb.pc;
       g_trap_req.tval    = '0;
-    end else if (g_commit_ok && wb.exc) begin
+    end else if (g_commit_ok && g_exc) begin
       g_trap_req.valid   = 1'b1;
       g_trap_req.is_irq  = 1'b0;
-      g_trap_req.exccode = wb.exccode;
+      g_trap_req.exccode = g_exccode;
       g_trap_req.epc     = wb.pc;
-      g_trap_req.tval    = wb.exctval;
+      g_trap_req.tval    = g_exctval;
     end
 
     // The RVFI payload is driven every cycle; `valid` alone says whether a
@@ -180,7 +188,7 @@ module tb_s1_wb
     g_rvfi.valid     = g_commit_ok;
     g_rvfi.order     = order;
     g_rvfi.insn      = wb.instr;
-    g_rvfi.trap      = wb.exc;
+    g_rvfi.trap      = g_exc;
     g_rvfi.halt      = 1'b0;
     g_rvfi.intr      = 1'b0;
     g_rvfi.mode      = priv;
@@ -218,7 +226,6 @@ module tb_s1_wb
     check ("csr.wdata",       csr_commit.wdata,   wb.csr_wdata);
 
     check1("sb_commit",       sb_commit,          g_commit && wb.sb_alloc);
-    check ("sb_commit_tag",   sb_commit_tag,      wb.tag);
 
     check1("flush",           flush,              g_cause != FLUSH_NONE);
     check ("flush_cause",     flush_cause,        g_cause);
@@ -260,22 +267,24 @@ module tb_s1_wb
     // ---- properties, not values --------------------------------------------
     // These restate the commit contract, so they fail even if the model and
     // the RTL have made the same mistake.
-    if (wb.exc && g_commit_ok) begin
+    if (g_exc && g_commit_ok) begin
       check1("trap kills rf write",  rf_wr.we,     1'b0);
       check1("trap kills csr write", csr_commit.we, 1'b0);
       check1("trap kills sb commit", sb_commit,    1'b0);
       check1("trap does not retire", instret,      1'b0);
     end
-    if (g_fence_wait) begin
-      check1("held fence: no rf",    rf_wr.we,     1'b0);
-      check1("held fence: no csr",   csr_commit.we, 1'b0);
-      check1("held fence: no sb",    sb_commit,    1'b0);
-      check1("held fence: no flush", flush,        1'b0);
-      check1("held fence: no trap",  trap_req.valid, 1'b0);
-      check1("held fence: no retire", instret,     1'b0);
-      // Quiet but not busy is a hang, not a wrong answer.
-      check1("held fence: busy",     busy,         1'b1);
-      check1("held fence: no rvfi",  rvfi.valid,   1'b0);
+    // Privilege only returns from M-mode, and only through MRET.
+    if (mret) begin
+      check ("mret only from MRET",  wb.sys_op,    SYS_MRET);
+      check ("mret only from M",     priv,         PRIV_M);
+    end
+    if (flush_cause == FLUSH_MRET) check1("xRET redirect means mret", mret, 1'b1);
+    if (g_ret_bad && g_commit_ok) begin
+      check1("bad xRET: no mret",     mret,          1'b0);
+      check1("bad xRET: traps",       trap_req.valid, 1'b1);
+      check ("bad xRET: illegal",     trap_req.exccode, EXC_ILLEGAL_INSTR);
+      check ("bad xRET: tval=instr",  trap_req.tval, XLEN'(wb.instr));
+      check ("bad xRET: to vector",   redirect_pc,   trap_vec);
     end
     if (g_take_irq) begin
       check1("irq: no retire",       instret,      1'b0);
@@ -350,13 +359,12 @@ module tb_s1_wb
   int unsigned n_sys;
 
   initial begin
-    $display("=== tb_s1_wb : XLEN=%0d TAG_W=%0d ===", XLEN, TAG_W);
+    $display("=== tb_s1_wb : XLEN=%0d ===", XLEN);
 
     wb        = '0;
     wb_valid  = 1'b0;
     irq_valid = 1'b0;
     irq_code  = '0;
-    sb_empty  = 1'b1;
     trap_vec  = '0;
     mepc      = '0;
     priv      = PRIV_M;
@@ -378,7 +386,7 @@ module tb_s1_wb
     for (int unsigned rz = 0; rz < 2; rz++)
     for (int unsigned cw = 0; cw < 2; cw++)
     for (int unsigned sa = 0; sa < 2; sa++)
-    for (int unsigned se = 0; se < 2; se++) begin
+    for (int unsigned pm = 0; pm < 3; pm++) begin
       logic [31:0] rd_draw;
       rand_payload();
       wb_valid   = v[0];
@@ -390,10 +398,9 @@ module tb_s1_wb
       wb.rd      = (rz[0] != 0) ? 5'd0 : rd_draw[4:0];
       wb.csr_we  = cw[0];
       wb.sb_alloc = sa[0];
-      sb_empty   = se[0];
-      priv       = priv_lvl_e'((s % 3 == 0) ? PRIV_U : ((s % 3 == 1) ? PRIV_S : PRIV_M));
-      ctx = $sformatf("v=%0d irq=%0d exc=%0d %s rd_we=%0d rd0=%0d csr=%0d sb=%0d sbe=%0d",
-                      v, q, e, wb.sys_op.name(), rw, rz, cw, sa, se);
+      priv       = (pm == 0) ? PRIV_U : ((pm == 1) ? PRIV_S : PRIV_M);
+      ctx = $sformatf("v=%0d irq=%0d exc=%0d %s rd_we=%0d rd0=%0d csr=%0d sb=%0d %s",
+                      v, q, e, wb.sys_op.name(), rw, rz, cw, sa, priv.name());
       settle();
       check_all();
     end
@@ -401,22 +408,23 @@ module tb_s1_wb
     // --- directed: the cases worth naming ------------------------------------
     ctx = "directed";
 
-    // A fence whose stores have not drained must wait, and an interrupt must
-    // not sneak past it: the fence has not committed, so it is still the
-    // oldest instruction and the interrupt belongs to it, not after it.
+    // A FENCE commits when it arrives: s1_mem only shows it once the store
+    // buffer is empty, so WB has nothing to wait for.  FENCE (not FENCE.I)
+    // does not redirect -- redirecting on a plain FENCE would refetch on
+    // every one.
     rand_payload();
-    wb_valid = 1'b1; irq_valid = 1'b1; wb.exc = 1'b0;
-    wb.sys_op = SYS_FENCE; sb_empty = 1'b0; wb.rd_we = 1'b1; wb.rd = 5'd7;
-    wb.csr_we = 1'b1; wb.sb_alloc = 1'b1;
+    wb_valid = 1'b1; irq_valid = 1'b0; wb.exc = 1'b0; priv = PRIV_M;
+    wb.sys_op = SYS_FENCE; wb.rd_we = 1'b0; wb.csr_we = 1'b0; wb.sb_alloc = 1'b0;
     settle(); check_all();
-    check1("fence+irq: no trap taken", trap_req.valid, 1'b0);
+    check1("FENCE retires",  instret, 1'b1);
+    check1("FENCE no flush", flush,   1'b0);
 
-    // Same fence, now drained: it commits, and FENCE (not FENCE.I) does not
-    // redirect -- redirecting on a plain FENCE would refetch on every one.
-    sb_empty = 1'b1; irq_valid = 1'b0;
+    // An interrupt on a FENCE is taken in its place, like any instruction.
+    irq_valid = 1'b1;
     settle(); check_all();
-    check1("drained FENCE retires",  instret, 1'b1);
-    check1("drained FENCE no flush", flush,   1'b0);
+    check1("irq on FENCE taken",  trap_req.is_irq, 1'b1);
+    check1("irq on FENCE: no retire", instret, 1'b0);
+    irq_valid = 1'b0;
 
     // FENCE.I does redirect, to the successor, which is what refreshes the
     // frontend.  It must not go to the trap vector or to mepc.
@@ -425,31 +433,46 @@ module tb_s1_wb
     check ("FENCE.I cause", flush_cause, FLUSH_FENCE_I);
     check ("FENCE.I -> next_pc", redirect_pc, wb.next_pc);
 
-    // SFENCE.VMA is not a fence for the store buffer, so sb_empty must not
-    // hold it: treating it as one would deadlock on a non-empty buffer.
-    wb.sys_op = SYS_SFENCE_VMA; sb_empty = 1'b0;
+    wb.sys_op = SYS_SFENCE_VMA;
     settle(); check_all();
-    check1("SFENCE with full sb still retires", instret, 1'b1);
     check ("SFENCE cause", flush_cause, FLUSH_SFENCE);
 
-    // xRET returns to xepc, and all three of MRET/SRET/DRET take that path.
-    foreach_ret : begin
-      sys_op_e rets[3];
-      rets[0] = SYS_MRET; rets[1] = SYS_SRET; rets[2] = SYS_DRET;
-      for (int unsigned i = 0; i < 3; i++) begin
-        rand_payload();
-        wb_valid = 1'b1; irq_valid = 1'b0; wb.exc = 1'b0; sb_empty = 1'b1;
-        wb.sys_op = rets[i];
-        settle(); check_all();
-        check1($sformatf("%s asserts mret", rets[i].name()), mret, 1'b1);
-        check ($sformatf("%s -> mepc", rets[i].name()), redirect_pc, mepc);
-      end
+    // xRET in every mode.  Only MRET from M returns to mepc; every other
+    // combination is an illegal-instruction trap that must not raise
+    // privilege.  This is the privilege-escalation case, named one by one.
+    begin
+      sys_op_e   rets[3];
+      priv_lvl_e modes[3];
+      rets[0]  = SYS_MRET; rets[1]  = SYS_SRET; rets[2]  = SYS_DRET;
+      modes[0] = PRIV_U;   modes[1] = PRIV_S;   modes[2] = PRIV_M;
+      for (int unsigned i = 0; i < 3; i++)
+        for (int unsigned m = 0; m < 3; m++) begin
+          logic legal;
+          rand_payload();
+          wb_valid = 1'b1; irq_valid = 1'b0; wb.exc = 1'b0;
+          wb.sys_op = rets[i]; priv = modes[m];
+          wb.rd_we = 1'b1; wb.rd = 5'd5; wb.csr_we = 1'b1; wb.sb_alloc = 1'b0;
+          legal = (rets[i] == SYS_MRET) && (modes[m] == PRIV_M);
+          ctx = $sformatf("%s from %s", rets[i].name(), modes[m].name());
+          settle(); check_all();
+          check1("xRET mret_o",    mret,           legal);
+          check1("xRET traps",     trap_req.valid, !legal);
+          check ("xRET redirect",  redirect_pc,    legal ? mepc : trap_vec);
+          check1("xRET retires",   instret,        legal);
+          check1("xRET no rf/csr", rf_wr.we || csr_commit.we, legal);
+          if (!legal) begin
+            check ("illegal xRET code", trap_req.exccode, EXC_ILLEGAL_INSTR);
+            check ("illegal xRET tval", trap_req.tval,    XLEN'(wb.instr));
+            check1("illegal xRET rvfi.trap", rvfi.trap,   1'b1);
+          end
+        end
+      ctx = "directed";
     end
 
     // A trapping xRET is a trap, not a return: the exception wins, so mret
     // must drop and the redirect must go to the vector.
     rand_payload();
-    wb_valid = 1'b1; irq_valid = 1'b0; wb.exc = 1'b1; sb_empty = 1'b1;
+    wb_valid = 1'b1; irq_valid = 1'b0; wb.exc = 1'b1; priv = PRIV_M;
     wb.sys_op = SYS_MRET;
     settle(); check_all();
     check1("trapping MRET drops mret", mret, 1'b0);
@@ -467,7 +490,7 @@ module tb_s1_wb
     // A store that faulted must not commit its buffer entry, even though MEM
     // set sb_alloc before it knew.  This is the state-corrupting case.
     rand_payload();
-    wb_valid = 1'b1; irq_valid = 1'b0; wb.exc = 1'b1; sb_empty = 1'b1;
+    wb_valid = 1'b1; irq_valid = 1'b0; wb.exc = 1'b1;
     wb.sys_op = SYS_NONE; wb.sb_alloc = 1'b1; wb.mem_wmask = 8'hFF;
     settle(); check_all();
     check1("faulting store does not commit", sb_commit, 1'b0);
@@ -477,7 +500,7 @@ module tb_s1_wb
     // write, and RVFI must report rd_addr 0 with rd_wdata 0 rather than the
     // value that was dropped.
     rand_payload();
-    wb_valid = 1'b1; irq_valid = 1'b0; wb.exc = 1'b0; sb_empty = 1'b1;
+    wb_valid = 1'b1; irq_valid = 1'b0; wb.exc = 1'b0;
     wb.sys_op = SYS_NONE; wb.rd_we = 1'b1; wb.rd = 5'd0;
     settle(); check_all();
     check1("rd=x0 suppressed", rf_wr.we, 1'b0);
@@ -486,7 +509,7 @@ module tb_s1_wb
     // RVFI reports a trapping instruction with trap set, and pc_wdata naming
     // the vector it actually went to -- not the successor it never reached.
     rand_payload();
-    wb_valid = 1'b1; irq_valid = 1'b0; wb.exc = 1'b1; sb_empty = 1'b1;
+    wb_valid = 1'b1; irq_valid = 1'b0; wb.exc = 1'b1;
     wb.sys_op = SYS_NONE;
     settle(); check_all();
     check1("rvfi reports the trap", rvfi.valid, 1'b1);
@@ -505,7 +528,6 @@ module tb_s1_wb
       wb.rd_we    = d3[0];
       wb.csr_we   = d3[1];
       wb.sb_alloc = d3[2];
-      sb_empty    = d3[3];
       wb.rd       = d4[4:0];
       wb.sys_op   = sys_op_e'(d5 % n_sys);
       priv        = priv_lvl_e'((d6[1:0] == 2'b10) ? 2'b11 : d6[1:0]);

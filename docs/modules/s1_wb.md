@@ -3,11 +3,11 @@
 | | |
 |---|---|
 | **Status** | WIP — unit- and integration-verified |
-| **Authorship** | see the file header (`Author(s)` / `Modified By`) — CODING_STANDARD.md §5 |
+| **Authorship** | Eman Nasar (fatehulnasareman@gmail.com, GitHub EmanNasar001) — see the file header |
 | **Project** | T-02 (core backend) |
 | **Spec** | SPEC §7.5, §10.3, §28.2 |
 | **Source** | `rtl/core/s1_wb.sv` |
-| **Testbench** | `verif/unit/tb_s1_wb.sv` (336,505 checks), plus the integration testbench that lands with `s1_core` |
+| **Testbench** | `verif/unit/tb_s1_wb.sv` (395,309 checks), plus the integration testbench that lands with `s1_core` |
 
 ## Purpose
 
@@ -31,7 +31,8 @@ reaches WB. Buffer the store in MEM, release it here, and a trap taken by *this*
 have already written memory.
 
 Interrupts are taken here too, in place of a commit, so `mepc` names an instruction that has not
-executed.
+executed. And xRET legality is checked here, because this is the last point before privilege changes
+(see *Privilege*).
 
 ## Interface contract
 
@@ -39,11 +40,10 @@ executed.
 |---|---|---|---|
 | `wb_valid_i`, `wb_i` | in | 1, `mem_wb_t` | the finished instruction from MEM. **No ready** — MEM cannot be told to wait |
 | `irq_valid_i`, `irq_code_i` | in | 1, 6 | already masked and prioritised by the CSR file |
-| `sb_empty_i` | in | 1 | a `fence` holds the commit until memory has drained |
 | `rf_wr_o` | out | `rf_wr_t` | the architectural register write |
 | `csr_commit_o` | out | `csr_upd_t` | the CSR write EX computed |
 | `instret_o` | out | 1 | `minstret` — retired, **not** trapped |
-| `sb_commit_o`, `sb_commit_tag_o` | out | 1, `TAG_W` | release the store-buffer entry to drain |
+| `sb_commit_o` | out | 1 | a store committed: `s1_mem` releases its oldest uncommitted entry. No tag — commit is in order |
 | `flush_o`, `flush_cause_o` | out | 1, `flush_cause_e` | pipeline flush and why |
 | `redirect_valid_o`, `redirect_pc_o` | out | 1, `XLEN` | where to resume |
 | `trap_req_o`, `mret_o` | out | `trap_req_t`, 1 | the trap request to the CSR file |
@@ -63,26 +63,39 @@ An instruction commits when it arrives, unless something older takes precedence:
 |---|---|
 | a trap on the committing instruction | no register, CSR or store-buffer write; `trap_req_o`; flush to `trap_vec_i` |
 | an interrupt pending | taken **in place of** the commit, so `mepc` names an instruction that has not executed |
-| `fence` and the store buffer is not empty | the commit is held |
-| `mret` | `mret_o`; resume at `mepc_i` |
+| `MRET` from M-mode | `mret_o`; resume at `mepc_i` |
+| `MRET` from U/S, or any `SRET` / `DRET` | illegal-instruction trap, `tval` = the instruction; **never** `mret_o` |
+| `fence` | commits like anything else — `s1_mem` only shows one once its store buffer is empty |
 | otherwise | all six steps above |
 
 x0 is never written, and a trapping instruction writes nothing — SPEC §9.2's rule, applied here
 because this is the only place architectural state changes.
+
+**Privilege.** This core has M- and U-mode only: S-mode is not in v1 (SCOPE_CONTRACT §4) and there
+is no debug mode. So `SRET` and `DRET` are always illegal, and `MRET` is legal only from M-mode
+(`priv_i`). WB checks this itself rather than trusting earlier stages: without it, `MRET`, `SRET`
+or `DRET` from U-mode would jump to `mepc` with `mret_o` set, which is a privilege escalation. An
+illegal xRET becomes an ordinary exception: `EXC_ILLEGAL_INSTR`, `tval` = the instruction, nothing
+written, `rvfi.trap` set. The decoder and EX should also reject these (they are cheaper to stop
+early), but the commit point does not depend on it.
+
+**Fences.** WB no longer waits for the store buffer. `s1_mem` holds a FENCE in MEM/WB until its
+buffer is empty and MEM/WB has no ready, so a wait here could only drop the fence.
 
 ## Verification status
 
 | Layer | Status |
 |---|---|
 | Lint | clean once the shared types are available |
-| Unit test | `tb_s1_wb` — 336,505 checks, every output against an independent model |
-| Mutation | 20 of 20 lint-clean mutants caught |
+| Unit test | `tb_s1_wb` — 395,309 checks, every output against an independent model, Verilator 5.020 |
+| Mutation | 10 of 10 non-equivalent mutants of the xRET and commit logic caught (one more, `SRET` driving `mret_o`, is equivalent: `SRET` always traps first) |
 | Integration | every retirement compared against spike, over the whole pipeline |
 
 **Unit test.** The stage is combinational, and nine inputs decide what it does, so the unit
-testbench sweeps that control space **exhaustively** — valid, interrupt, store-buffer-empty,
-exception, all ten `sys_op` values, `rd_we`, `rd == x0`, `csr_we` and `sb_alloc` — with a fresh
-random payload on each of the 5,120 combinations, then 4,000 fully random cycles on top. Every
+testbench sweeps that control space **exhaustively** — valid, interrupt, exception, all ten
+`sys_op` values, `rd_we`, `rd == x0`, `csr_we`, `sb_alloc` and the privilege mode (U, S, M) — with a
+fresh random payload on each of the 7,680 combinations, then 4,000 fully random cycles on top. The
+privilege mode is swept independently of `sys_op`, so every xRET is seen from every mode. Every
 output is compared against a model written from the commit rules rather than from the RTL.
 
 Alongside the value comparisons it asserts the contract directly, so a check fails even where the
@@ -90,8 +103,9 @@ model and the RTL would agree on a shared mistake:
 
 - a trap suppresses **all three** writes — register file, CSR and the store-buffer commit — and does
   not retire
-- a held fence is completely quiet **and still reports `busy_o`**; quiet but not busy is a hang,
-  because ID stops serialising and the fence is lost
+- `mret_o` only ever comes from `MRET` in M-mode; an illegal xRET traps with the instruction in
+  `tval`, writes nothing and never redirects to `mepc` (also tested directly: all three xRETs ×
+  all three modes)
 - an interrupt replaces a commit rather than following one, so `mepc` names an instruction that has
   not executed and `minstret` does not count it
 - `x0` is never written, on any path
