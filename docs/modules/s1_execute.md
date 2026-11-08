@@ -70,19 +70,20 @@ None. Widths come from `s1_pkg`.
 **Operands:** `op1_is_pc`/`op2_is_imm` select PC or the immediate as ALU inputs. Branches always
 compare `rs1` with `rs2`.
 
-**Adders:** besides the ALU there are three:
+**Adders:** besides the ALU there are two:
 - `pc + len`, used for the link address and fall-through; `len` is 2 when `compressed`.
 - `pc + imm`, for branch and JAL targets.
-- `rs1 + imm`, which is both the load/store address and the JALR target (bit 0 cleared). AMO/LR/SC
-  use `rs1` alone.
+
+The load/store/AMO address and the JALR target (bit 0 cleared) come from the ALU result: decode
+gives them `ALU_ADD` with `op2_is_imm`, and `imm = 0` for LR/SC/AMO.
 
 **Branch resolution:** by the `s1_fetch` contract, `pred_taken` means fetch already went to
-`pc + imm`. EX redirects iff where fetch went ≠ the real successor:
+`pc + imm`. EX redirects iff the prediction was wrong, which needs no target comparison:
 
 | `pred_taken` | Instruction | Fetch went to | Redirect when |
 |---|---|---|---|
-| 0 | any | `pc + len` | successor ≠ `pc + len` (taken branch or jump) |
-| 1 | branch or JAL | `pc + imm` | successor ≠ `pc + imm` |
+| 0 | any | `pc + len` | taken (branch or jump) |
+| 1 | branch or JAL | `pc + imm` | not taken (a branch to its own fall-through gets a harmless extra redirect) |
 | 1 | JALR or anything else | unknowable | always (to the real successor) |
 
 The redirect fires once, in the instruction's first cycle, so a stalled branch does not restart
@@ -108,6 +109,7 @@ In priority order:
 |---|---|---|
 | fetch exception carried in `ex_i` | as given | as given |
 | `op.illegal`, or a CSR access the CSR file refuses | `EXC_ILLEGAL_INSTR` | `instr_raw` (the 16-bit parcel for compressed) |
+| `MRET` with `priv_i != PRIV_M`; `SRET`, `DRET`, `SFENCE.VMA` (no S-mode or debug mode in this core) | `EXC_ILLEGAL_INSTR` | `instr_raw` |
 | ECALL | `EXC_ECALL_U/S/M` by `priv_i` | 0 |
 | EBREAK | `EXC_BREAKPOINT` | `pc` |
 
@@ -146,8 +148,9 @@ How the testbench works:
     `pc + len`, a predicted JALR, and a non-branch predicted taken;
   - CSR intent combinations, with privilege and read-only faults;
   - ECALL per privilege, and EBREAK;
+  - MRET, SRET, SFENCE.VMA and DRET from each privilege;
   - fetch exception priority, and `mtval` for compressed-origin instructions;
-  - an illegal AMO/DIV that still has side fields set, and an AMO carrying a stray immediate;
+  - an illegal AMO/DIV that still has side fields set;
   - operand capture across a 10-cycle DIV stall, and exactly one redirect for a stalled branch;
   - flush of a waiting DIV;
   - ALU throughput.
@@ -162,7 +165,7 @@ Mutants, each a copy of `s1_execute.sv` with one line changed. All 18 are caught
 | no x0 force | `x0` operand takes the forwarded value | redirect / result checks |
 | no capture | re-muxes forwarded operands while stalled | dispatch payload stability (R-C10) |
 | redirect every cycle | stalled branch redirects repeatedly | first-cycle redirect check |
-| conservative mispredict | redirects when fetch was already right | degenerate-prediction directed case |
+| mispredict wrong | redirect missing, or on a correct prediction (apart from a branch to its own fall-through) | predicted/not-predicted directed cases and random soak |
 | JALR bit 0 | target bit 0 not cleared | redirect target |
 | link always +4 | ignores `compressed` | EX/MEM result |
 | RS/RC with x0 writes | CSR write intent with `rs1 = x0` | CSR intent check |
@@ -173,7 +176,6 @@ Mutants, each a copy of `s1_execute.sv` with one line changed. All 18 are caught
 | EX/MEM source wired to MEM/WB | wrong forwarding source | EX/MEM result |
 | flush keeps EX/MEM | flushed entry reaches MEM | scoreboard |
 | md valid on ready | `md_valid_o` gated by `md_ready_i` | ready-independence probe |
-| AMO adds imm | AMO address uses `rs1 + imm` | directed AMO-with-immediate case (added after this mutant first survived) |
 | tval from expanded instr | `mtval` uses the 32-bit expansion | EX/MEM `exctval` |
 | EBREAK tval 0 | `mtval` not `pc` | EX/MEM `exctval` |
 | MXIF completes | candidate marked complete | EX/MEM `complete` |

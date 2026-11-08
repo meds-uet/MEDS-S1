@@ -97,7 +97,7 @@ module tb_s1_execute
     logic [XLEN-1:0]     ftval;
     logic [XLEN-1:0]     v1, v2;
     fwd_src_e            s1, s2;
-    logic [TAG_W-1:0]    tag;
+    logic [2:0]          tag;         // TB sequence number, for messages only
     priv_lvl_e           priv;
     logic [XLEN-1:0]     md_res;    // what the external MUL/DIV unit answers
     decoded_op_t         op;
@@ -134,7 +134,7 @@ module tb_s1_execute
     exp_t            e;
     gop_e            g;
     logic [31:0]     i;
-    logic [XLEN-1:0] len, pc_len, res, tgt, nxt, fetch_to, old, src;
+    logic [XLEN-1:0] len, pc_len, res, tgt, nxt, old, src;
     logic            taken, ctrl_known, lsu, is_rw, is_csr, is_amo;
     e = '0; i = it.instr; g = g_classify(i);
     len    = it.compressed ? LEN16 : LEN32;
@@ -153,6 +153,10 @@ module tb_s1_execute
       e.exc = 1; e.m.exccode = it.fcode; e.m.exctval = it.ftval;
     end else if (it.op.illegal || it.op.mxif_candidate ||
                  (is_csr && csr_bad(i[31:20], e.csr_re, e.csr_we, it.priv))) begin
+      e.exc = 1; e.m.exccode = EXC_ILLEGAL_INSTR; e.m.exctval = XLEN'(it.raw);
+    end else if ((g == G_MRET && it.priv != PRIV_M) ||
+                 g inside {G_SRET, G_SFENCE_VMA, G_DRET}) begin
+      // No S-mode, no debug mode; MRET only from M.
       e.exc = 1; e.m.exccode = EXC_ILLEGAL_INSTR; e.m.exctval = XLEN'(it.raw);
     end else if (g == G_ECALL) begin
       e.exc = 1;
@@ -204,11 +208,13 @@ module tb_s1_execute
       G_CSRRW, G_CSRRS, G_CSRRC, G_CSRRWI, G_CSRRSI, G_CSRRCI: res = old;
       default: ;
     endcase
-    // Successor, and where fetch went (s1_fetch contract: pred_taken => pc+imm).
+    // Successor.  s1_fetch contract: pred_taken => fetch went to pc+imm, which
+    // is right iff a branch or JAL is taken; otherwise it went to pc+len, right
+    // iff nothing is taken.  A branch to its own fall-through gets a harmless
+    // extra redirect.
     nxt        = taken ? tgt : pc_len;
-    ctrl_known = !it.pred || (g inside {G_JAL, G_BEQ, G_BNE, G_BLT, G_BGE, G_BLTU, G_BGEU});
-    fetch_to   = !it.pred ? pc_len : (g == G_JAL) ? it.pc + g_imm_j(i) : it.pc + g_imm_b(i);
-    e.redirect = !e.exc && (!ctrl_known || fetch_to != nxt);
+    ctrl_known = (g inside {G_JAL, G_BEQ, G_BNE, G_BLT, G_BGE, G_BLTU, G_BGEU});
+    e.redirect = !e.exc && (it.pred ? !(ctrl_known && taken) : taken);
     e.br_taken = !e.exc && taken && (g inside {G_BEQ, G_BNE, G_BLT, G_BGE, G_BLTU, G_BGEU});
 
     // MUL/DIV runs outside EX; its answer is EX's result.
@@ -217,7 +223,6 @@ module tb_s1_execute
     e.res_valid = !e.exc && (e.md || it.op.unit == UNIT_CSR ||
                              (it.op.unit == UNIT_ALU && !it.op.is_branch));
 
-    e.m.tag      = it.tag;
     e.m.rd       = i[11:7];
     e.m.rd_we    = it.op.rd_we && !e.exc;
     e.m.result   = res;
@@ -282,7 +287,7 @@ module tb_s1_execute
     if (got !== x) begin
       errors++;
       if (errors <= 30) begin
-        $display("  FAIL @%0d EX/MEM mismatch tag=%0d pc=%h", cycle, x.tag, x.pc);
+        $display("  FAIL @%0d EX/MEM mismatch pc=%h", cycle, x.pc);
         $display("       got res=%h nxt=%h ld/st/amo=%0d%0d%0d addr=%h wd=%h rd=%0d/%0d exc=%0d/%0d csr=%0d/%h/%h rs=%0d:%h/%0d:%h",
                  got.result, got.next_pc, got.is_load, got.is_store, got.amo_op, got.mem_addr,
                  got.mem_wdata, got.rd, got.rd_we, got.exc, got.exccode, got.csr_we, got.csr_addr,
@@ -298,7 +303,7 @@ module tb_s1_execute
   // ---------------------------------------------------------------------------
   // Generation
   // ---------------------------------------------------------------------------
-  logic [TAG_W-1:0] tag_next = '0;
+  logic [2:0] tag_next = '0;
 
   function automatic logic [XLEN-1:0] rnd_val();
     int unsigned r;
@@ -400,7 +405,6 @@ module tb_s1_execute
                 $urandom, $urandom, $urandom, $urandom, $urandom, $urandom, $urandom, $urandom};
     if (have) begin
       ex_in.op         = cur.op;
-      ex_in.tag        = cur.tag;
       ex_in.rs1_val    = (cur.s1 == FWD_RF) ? cur.v1 : cur.pc ^ 64'h1111;
       ex_in.rs2_val    = (cur.s2 == FWD_RF) ? cur.v2 : cur.pc ^ 64'h2222;
       ex_in.rs1_fwd    = cur.s1;
@@ -564,11 +568,11 @@ module tb_s1_execute
   task automatic test_branches();
     item_t it;
     logic [31:0] w;
-    // Predicted-taken, not taken, target == fall-through: fetch was right.
+    // Predicted-taken, not taken, target == fall-through: harmless extra redirect.
     w = enc_beq(4, 5, 6);
     it = item_ab(w, 1, 2); it.pred = 1; it.compressed = 0; it.op = golden_decode(w, it.pc, 1'b1, it.fexc);
     it.fexc = 0; dq.push_back(it);
-    // JALR to exactly pc+len, not predicted: no redirect.
+    // JALR to exactly pc+len, not predicted: taken, so redirected anyway.
     w = with_regs(32'h00000067, 1, 5, 0);
     it = item_ab(w, 0, 0); it.pred = 0; it.compressed = 1;
     it.v1 = it.pc + LEN16; it.op = golden_decode(w, it.pc, 1'b1, it.fexc); it.fexc = 0; dq.push_back(it);
@@ -607,6 +611,17 @@ module tb_s1_execute
     end
     it = item_ab(32'h00100073, 0, 0); it.op = golden_decode(it.instr, it.pc, 1'b1, it.fexc);
     it.fexc = 0; dq.push_back(it);
+    // MRET legal only from M; SRET, SFENCE.VMA and DRET never.  No xRET from a
+    // lower privilege may reach EX/MEM without an exception.
+    for (int p = 0; p < 3; p++) begin
+      logic [31:0] xret [4];
+      xret = '{32'h30200073, 32'h10200073, 32'h12000073, 32'h7b200073};   // mret sret sfence.vma dret
+      foreach (xret[k]) begin
+        it = item_ab(xret[k], 0, 0); it.op = golden_decode(xret[k], it.pc, 1'b1, it.fexc);
+        if (k == 3) begin it.op.illegal = 1'b0; it.op.sys_op = SYS_DRET; end  // decoder reports DRET illegal
+        it.fexc = 0; it.priv = (p == 0) ? PRIV_U : (p == 1) ? PRIV_S : PRIV_M; dq.push_back(it);
+      end
+    end
     drain();
   endtask
 
@@ -622,10 +637,6 @@ module tb_s1_execute
     // A decoder that flags illegal but leaves AMO side fields set must not reach memory.
     it = item_ab(32'h0000302f, 0, 0); it.op = golden_decode(32'h0000302f, it.pc, 1'b1, it.fexc);
     it.op.illegal = 1; it.fexc = 0; dq.push_back(it);
-    // An AMO addresses with rs1 alone, even if the decoder left an immediate.
-    it = item_ab(with_regs(32'h0000302f, 5, 6, 7), 64'h8000_1000, 1);
-    it.op = golden_decode(it.instr, it.pc, 1'b1, it.fexc); it.op.imm = 64'h40; it.fexc = 0;
-    dq.push_back(it);
     // Illegal DIV: the MUL/DIV unit is not started.
     it = item_ab(32'h02004033, 5, 0); it.op = golden_decode(32'h02004033, it.pc, 1'b1, it.fexc);
     it.op.illegal = 1; it.fexc = 0; dq.push_back(it);

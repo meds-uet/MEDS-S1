@@ -258,6 +258,7 @@ function automatic decoded_op_t golden_decode(input logic [31:0] i, input logic 
 
     default: begin   // RV64A
       d.unit = UNIT_LSU; d.rs1_re = 1; d.rd_we = 1;
+      d.op2_is_imm = 1;                                   // address = rs1 + 0 on the ALU
       d.aq = i[26]; d.rl = i[25];
       d.mem_size = i[12] ? LS_DOUBLE : LS_WORD;
       d.rs2_re   = !(g inside {G_LR_W, G_LR_D});

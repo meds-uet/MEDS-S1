@@ -121,14 +121,15 @@ module s1_execute
   );
 
   // ---------------------------------------------------------------------------
-  // Address and target adders
+  // Address and target adders.  Load/store/AMO addresses and the JALR target
+  // come from the ALU: decode gives them ALU_ADD with op2_is_imm (imm = 0 for
+  // LR/SC/AMO).
   // ---------------------------------------------------------------------------
-  logic [XLEN-1:0] pc_len, pc_imm, agu, jalr_tgt;
+  logic [XLEN-1:0] pc_len, pc_imm, jalr_tgt;
 
   assign pc_len   = op.pc + (ex_i.compressed ? XLEN'(RVC_BYTES) : XLEN'(INSTR_BYTES));
   assign pc_imm   = op.pc + op.imm;
-  assign agu      = rs1 + ((op.amo_op != AMO_NONE) ? '0 : op.imm);      // AMO/LR/SC: rs1 only
-  assign jalr_tgt = {agu[XLEN-1:1], 1'b0};
+  assign jalr_tgt = {alu_res[XLEN-1:1], 1'b0};
 
   // ---------------------------------------------------------------------------
   // CSR read-modify-write.  RS/RC write only if the rs1 field (or uimm) is
@@ -180,6 +181,13 @@ module s1_execute
       exc     = 1'b1;
       exccode = EXC_ILLEGAL_INSTR;
       exctval = XLEN'(ex_i.instr_raw);
+    end else if ((op.sys_op == SYS_MRET && priv_i != PRIV_M) ||
+                 op.sys_op == SYS_SRET || op.sys_op == SYS_DRET ||
+                 op.sys_op == SYS_SFENCE_VMA) begin
+      // No S-mode and no debug mode in this core; MRET needs M.
+      exc     = 1'b1;
+      exccode = EXC_ILLEGAL_INSTR;
+      exctval = XLEN'(ex_i.instr_raw);
     end else if (op.sys_op == SYS_ECALL) begin
       exc     = 1'b1;
       unique case (priv_i)
@@ -196,8 +204,9 @@ module s1_execute
 
   // ---------------------------------------------------------------------------
   // Branch resolution.  Fetch contract: pred_taken means it went to pc+imm,
-  // which is checkable only for a branch or JAL; otherwise it went to pc+len.
-  // Redirect iff where fetch went differs from the real successor.
+  // so it was right iff the branch or JAL is taken; JALR is never predicted
+  // correctly.  Not predicted means it went to pc+len, right iff not taken.
+  // A branch whose target is the fall-through gets a harmless extra redirect.
   // ---------------------------------------------------------------------------
   logic            taken, mispredict;
   logic [XLEN-1:0] next_pc;
@@ -206,8 +215,7 @@ module s1_execute
   assign next_pc    = !taken     ? pc_len
                     : op.is_jalr ? jalr_tgt
                     :              pc_imm;
-  assign mispredict = ex_i.pred_taken ? (!(op.is_branch || op.is_jal) || next_pc != pc_imm)
-                                      : (next_pc != pc_len);
+  assign mispredict = ex_i.pred_taken ? !(taken && !op.is_jalr) : taken;
 
   // Once per instruction, in its first cycle: a stalled branch must not
   // restart fetch every cycle.
@@ -218,15 +226,7 @@ module s1_execute
   assign perf_br_mispredict_o = ex_redirect_valid_o;
 
   // ---------------------------------------------------------------------------
-  // RV64M.  Multiply and divide run here and hold EX until they answer; their
-  // result is EX's result and travels on through EX/MEM like any other.
-  //
-  // This is the whole of what the 5-stage core gives up relative to the
-  // decoupled design: nothing overlaps a divide.  What it buys is that every
-  // instruction leaves EX in program order, so there is no completion buffer,
-  // no second write port anywhere, and no way for a result to arrive out of
-  // turn.  A divide costs XLEN cycles of pipeline, which is honest and
-  // measurable -- EV_MULDIV_STALL counts it.
+  // RV64M: MUL/DIV stall EX; results leave in order.
   // ---------------------------------------------------------------------------
   logic            is_md, md_start, md_done;
   logic [XLEN-1:0] md_result;
@@ -263,7 +263,6 @@ module s1_execute
   always_comb begin
     out          = '0;
     out.amo_op   = AMO_NONE;   // not '0, which is AMO_LR
-    out.tag   = ex_i.tag;
     out.rd       = op.rd;
     out.rd_we    = op.rd_we && !exc;
     out.result   = is_md                       ? md_result
@@ -290,7 +289,7 @@ module s1_execute
       out.amo_op     = op.amo_op;
       out.aq         = op.aq;
       out.rl         = op.rl;
-      out.mem_addr   = agu;
+      out.mem_addr   = alu_res;
       out.mem_wdata  = rs2;
       out.csr_we     = is_csr && csr_write;
       out.csr_addr   = op.csr_addr;
