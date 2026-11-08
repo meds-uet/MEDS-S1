@@ -105,16 +105,29 @@ None. This module cannot fault.
 
 ## Known limitations
 
-- **Four memories for a 32-entry register file.** That is the cost of a single-port wrapper with no
-  stall.
+- **Cost of the single-port wrapper.** At the default (`N_READ` = 2, 32 × 64) this is four
+  `meds_s1_sram` instances, 8 Kbit of memory to hold 2 Kbit of architectural state, and 62 pointer
+  flops (`N_READ × (2**REG_ADDR_W − 1)`; x0 needs none). That is the price of reading and writing
+  every cycle through a one-port memory with no stall.
 - **`rdata_o` has a combinational path from `wdata_i`** (step 2 of the read order), so retire-to-ID
   is a timing path.
+- **A 32:1 mux sits in series with the SRAM address.** `cur_q[raddr_i]` picks the bank, and that
+  drives the bank enables and the address mux. The address comes from fetch's `nxt_rs*_addr_o`,
+  which is already the longest path in the core , so this mux is added on top of the
+  I$ → decode → regfile path.
+- **Both costs come from the wrapper having one port.** FPGA BRAM is natively dual-port. A 1R1W
+  `meds_s1_sram_2p` would make this module two SRAMs (one per read port, each written by the
+  single write port), read at `raddr_i` directly, and remove `cur_q` and the 32:1 mux entirely. It
+  is a change to the I9 SRAM wrapper interface, tracked in an I9 `interface-change` issue; R-03
+  owns the wrapper.
 - **Register contents are undefined until written.** Simulation shows whatever the memory model
   initialises to.
 
 ## Open questions
 
-- **Dual-port wrapper.** `docs/modules/meds_s1_sram.md` leaves the choice to R-03. With one, each
-  read port needs a single memory and no pointer; the ports of this module would not change.
+- **`meds_s1_sram_2p`.** A 1R1W wrapper would cut this module to two memories and drop `cur_q` and
+  the address mux (see Known limitations). R-03 owns the decision; the ports of this module would
+  not change. The same-cycle read/write case must be defined by the wrapper (the single-port one
+  returns old contents), because the write bypass here relies on it.
 - **Early read address.** The ID stage must drive `raddr_i` from the instruction leaving IF, after
   RV64C expansion, so fetch has to expose those register fields a cycle ahead of the ID register.
