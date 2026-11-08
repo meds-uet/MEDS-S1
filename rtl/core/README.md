@@ -28,7 +28,7 @@ Status tags follow CODING_STANDARD.md §5. This table is the fastest way to see 
 | `s1_mxif_port.sv` | TODO | **R-01 (critical path)** | | |
 | `s1_lsu.sv` | TODO | R-02 | | |
 | `s1_pmp.sv` | TODO | R-02 | | |
-| `s1_core.sv` | TODO | T-02 / R-01 | | |
+| `s1_core.sv` | WIP — RV64I verified vs spike; M, A, C, interrupts not yet | T-02 / R-01 | `tb_s1_core` (`verif/cosim/`) | [page](../../docs/modules/s1_core.md) |
 
 ## Rules specific to this directory
 
