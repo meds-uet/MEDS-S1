@@ -12,7 +12,7 @@
 
 ## Purpose
 
-The assembled five-stage RV64 core: `s1_fetch` → `s1_id` (`s1_decode`, `s1_hazard`) → `s1_ex`
+The assembled five-stage RV64 core: `s1_fetch` → `s1_id` (`s1_decode`, `s1_hazard`) → `s1_execute`
 (`s1_alu`) → `s1_mem` → `s1_wb`, with `s1_regfile` beside them. It only wires the stages together
 and exposes everything external as a port, so the CSR file, caches, fabric, checkers and the
 multiplier attach at this boundary without editing a stage.
@@ -33,7 +33,8 @@ multiplier attach at this boundary without editing a stage.
 | `fence_i_o` | — | one cycle when FENCE.I commits: invalidate the I$ |
 | `store_err_o`, `store_err_addr_o` | — | bus error while draining an already-committed store; imprecise by construction |
 | `chk_*` out, `pma_i`, `pma_fault_i`, `pmp_allow_i` in | SPEC §11 | one query per data access, answered **combinationally in the same cycle** by checkers outside the core |
-| `md_*` | — | RV64M outside the core: `md_start_o` in the instruction's first EX cycle, EX holds until `md_done_i` |
+| `md_*` | — | RV64M outside the core: `md_start_o` in the instruction's first EX cycle, EX holds until `md_done_i`. No multiplier/divider exists yet, so the core is RV64IAC until one is attached |
+| `x_*` | I1 MXIF-1.0 | coprocessor port, tied off; offload at WB (R1.1) |
 
 **Reset state:** fetch starts at `RESET_PC` in M-mode; no request is presented during reset.
 
@@ -42,7 +43,7 @@ multiplier attach at this boundary without editing a stage.
 | Parameter | Default | Effect |
 |---|---|---|
 | `RESET_PC` | `BOOT_ADDR` | first fetch address |
-| `MXIF_EN` | 0 | decode unknown encodings as MXIF candidates; with no MXIF port they still trap as illegal |
+| `MXIF_EN` | 0 | decode unknown encodings as MXIF candidates; with the MXIF port tied off they still trap as illegal |
 
 ## Behaviour
 
@@ -60,7 +61,7 @@ does not take the SPEC as a description of it.
 | SPEC | This core |
 |---|---|
 | §9 completion buffer, out-of-order completion | none; in-order completion, WB commits |
-| §6, §19, INTERFACES I1: MXIF port | none; MXIF candidates trap as illegal |
+| §6, §19, INTERFACES I1: MXIF port | port present (R1.3), tied off: `x_issue_valid_o` = 0; MXIF candidates trap as illegal until a coprocessor is attached |
 | §10 CSR file inside the core | outside: another project's, attached at the `csr_*`/trap ports |
 | §10.2 external CSR port | none (no coprocessor to route to) |
 | §8.2 load-use penalty 1 | 2 cycles: there is no MEM/WB→EX forward |
@@ -79,7 +80,7 @@ commit. `mtval` is the instruction bits, the pc (EBREAK) or the faulting address
 | Layer | Status | Where |
 |---|---|---|
 | Lint | clean on Verilator 5.020, `-Wall`, waivers only in `verif/verilator.vlt` | `make lint` |
-| Integration vs spike | testbench in place; test programs land separately | `verif/cosim/README.md` |
+| Integration vs spike | testbench in place; the test programs and generator are not in this PR, so no cosim result is claimed | `verif/cosim/README.md` |
 | Formal | not started | |
 
 Bugs the integration test found in the stages (fixed in github.com/ayeshaanwaar05/core; the stage PRs need the same fixes): a mispredicted branch lost when
@@ -89,11 +90,12 @@ M, `rs1/rs2_rdata` fixed at 0, and `pc_wdata` wrong for MRET.
 
 ## Known limitations
 
+MRET/SRET/DRET from a lower privilege (illegal in EX) is not yet in a cosim program.
 The CSR file itself (the test uses a minimal stand-in, `verif/cosim/tb_csr_model.sv`), RV64M,
 RV64A, RV64C, interrupts, misaligned and faulting
 accesses are not exercised by the integration test.
 
 ## Open questions
 
-Whether the in-order design replaces SPEC §9 for v1.0 needs ratifying at the Phase-0 review; until
-then the SPEC and this core disagree on the completion buffer and MXIF.
+In-order completion for v1.0 is proposed in [ADR-0004](../adr/0004-in-order-completion.md), pending
+sign-off. Until then the SPEC and this core disagree on the completion buffer.

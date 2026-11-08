@@ -1,77 +1,23 @@
-// =============================================================================
 // Copyright 2026 Maktab-e-Digital Systems Lahore.
 // Licensed under the Apache License, Version 2.0, see LICENSE file for details.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Author(s)    : integration (Oct,2026)
-// Modified By  :
-//
-// s1_core      : S1-Core -- RV64IMAC, classic 5-stage, in order  [WIP -- T-02]
+// =============================================================================
+// s1_core : S1-Core, classic 5-stage in-order pipeline            [WIP -- T-02]
 // Description  :
+// IF -> ID -> EX -> MEM -> WB.  In-order completion, WB is the commit point.
+// RV64IAC_Zicsr_Zifencei, M and U mode; RV64M, the CSR file and PMP are outside.
+// Memory ports speak MEM-REQ (INTERFACES.md I2).  Port groups below; design
+// notes and departures from the SPEC: docs/modules/s1_core.md.
 //
-//   IF  ->  ID  ->  EX  ->  MEM  ->  WB
-//
-// Single issue, in-order issue, **in-order completion**, one instruction
-// committed per cycle in WB.  `RV64IMAC_Zicsr_Zifencei`, machine and user
-// mode; the CSR file, PMP and counters are outside the core.
-//
-// There is no completion buffer, no coprocessor port, and no multi-cycle unit
-// hanging off the side of the pipeline.  MUL and DIV run inside EX and stall
-// it, so every result leaves EX in program order and there is exactly one
-// write path to architectural state: WB.  That is what makes this core small
-// enough to read in an afternoon and cheap to attach things to.
-//
-// The core speaks MEM-REQ (`INTERFACES.md` I2) on both memory ports and never
-// AXI (`rtl/core/README.md` rule 1).  Caches, fabric, CLINT, PLIC and debug
-// all attach at this boundary.
-//
-// -----------------------------------------------------------------------------
-// FOR WHOEVER IS BUILDING THE OTHER HALF
-//
-// Everything you need to attach to is a port of this module, and every one of
-// them is a frozen interface from specs/INTERFACES.md:
-//
-//   imem_*, dmem_*     I2 MEM-REQ.  valid/ready, payload stable until accepted,
-//                      `valid` never a function of `ready`.  One request
-//                      outstanding per port.  Put your I$ and D$ here.
-//   csr_*, trap_*,     the CSR file -- OUTSIDE this core (it is another
-//   mret_o, priv_*,    project's).  EX queries it (side-effect free), WB
-//   irq_*, instret_o,  commits to it, asks it to take traps and xRET, and it
-//   perf_*_o           answers with the vector, mepc, the privilege mode and
-//                      any pending interrupt (already masked, I7).  It owns
-//                      the PMP CSRs and the counters, fed by instret_o and
-//                      the perf_*_o event lines.
-//   rvfi_o             I6.  One committed instruction per cycle; this is what
-//                      Spike co-simulation reads.
-//   fence_i_o          asserted for one cycle when FENCE.I commits: invalidate
-//                      the I$ now, the redirect is already on its way.
-//   store_err_o        a bus error draining an already-committed store.
-//                      Imprecise by construction -- raise it as a machine
-//                      check at the platform level.
-//   chk_*, pma_*,      the PMA and PMP checks.  Both are OUTSIDE this core;
-//   pmp_allow_i        it asks, you answer in the same cycle.  The PMP
-//                      configuration comes from the CSR file, not from here.
-//   md_*               RV64M.  Also outside: EX stalls on it, so it needs no
-//                      tag and cannot complete out of order.
-//
-// verif/cosim/tb_s1_core.sv models memory behind imem/dmem, answers the PMA/PMP
-// query permissively, ties md_* off, stands in for the CSR file with a minimal
-// model (verif/cosim/tb_csr_model.sv), and runs every RV64I instruction against
-// spike.  What is deliberately absent, and where this core departs
-// from the SPEC, is written down in docs/modules/s1_core.md.
-// -----------------------------------------------------------------------------
-//
-// Reference: SPEC 6, 7, 8, 10-12; INTERFACES.md I2, I6, I7.
+// Reference: SPEC 6, 7, 8, 10-12; INTERFACES.md I1, I2, I6, I7.
 // =============================================================================
 
 module s1_core
   import s1_pkg::*;
 #(
   parameter logic [XLEN-1:0] RESET_PC    = BOOT_ADDR,
-  // SPEC 7.2: with this set the decoder marks an unrecognised encoding as an
-  // MXIF candidate instead of illegal.  There is no MXIF port on this core
-  // yet, so a candidate still ends as illegal-instruction (in EX) either way;
-  // the parameter is here so the decode path is already the one SPEC asks for.
+  // SPEC 7.2: decode an unrecognised encoding as an MXIF candidate, not illegal.
   parameter bit              MXIF_EN     = 1'b0
 ) (
   input  logic            clk_i,
@@ -159,6 +105,36 @@ module s1_core
   output logic                perf_load_use_o,
   output logic                perf_hazard_stall_o,
 
+  // ---- MXIF-1.0 coprocessor port (INTERFACES.md I1) -----------------------
+  // Offload happens at WB (R1.1).  Tied off until a coprocessor is attached:
+  // x_issue_valid_o is 0, so nothing is ever offloaded.
+  output logic                x_issue_valid_o,
+  input  logic                x_issue_ready_i,
+  output logic [31:0]         x_issue_instr_o,
+  output logic [1:0]          x_issue_mode_o,
+  output logic [3:0]          x_issue_id_o,
+  output logic [63:0]         x_issue_pc_o,
+  output logic [2:0][63:0]    x_issue_rs_o,
+  output logic [2:0]          x_issue_rs_valid_o,
+  input  logic                x_issue_accept_i,
+  input  logic                x_issue_writeback_i,
+  input  logic                x_issue_dualwrite_i,
+  input  logic                x_issue_loadstore_i,
+  output logic                x_commit_valid_o,
+  output logic [3:0]          x_commit_id_o,
+  output logic                x_commit_kill_o,
+  input  logic                x_norollback_i,
+  input  logic [3:0]          x_norollback_id_i,
+  input  logic                x_result_valid_i,
+  output logic                x_result_ready_o,
+  input  logic [3:0]          x_result_id_i,
+  input  logic [4:0]          x_result_rd_i,
+  input  logic [63:0]         x_result_data_i,
+  input  logic                x_result_we_i,
+  input  logic                x_result_exc_i,
+  input  logic [5:0]          x_result_exccode_i,
+  input  logic                x_idle_i,
+
   // ---- RVFI trace (INTERFACES.md I6) --------------------------------------
   output rvfi_t           rvfi_o
 );
@@ -188,7 +164,6 @@ module s1_core
   logic [XLEN-1:0]       wb_redirect_pc;
   flush_cause_e          wb_flush_cause;
   logic                  sb_commit;
-  logic [TAG_W-1:0]      sb_commit_tag;
 
   logic                  ex_redirect_valid;
   logic [XLEN-1:0]       ex_redirect_pc;
@@ -295,7 +270,7 @@ module s1_core
   // ===========================================================================
   // EX -- ALU, branch resolution, AGU, CSR read-modify-write, RV64M
   // ===========================================================================
-  s1_ex u_ex (
+  s1_execute u_ex (
     .clk_i                (clk_i),
     .rst_ni               (rst_ni),
 
@@ -336,58 +311,13 @@ module s1_core
   // MEM -- D$ access, PMA/PMP, store buffer, AMO and LR/SC
   // ===========================================================================
 
-  // The flush reaches MEM one cycle late, and it has to.  WB is combinational
-  // on MEM's output, so a flush wired straight back would close the loop
-  //     MEM.wb_valid_o -> WB.trap -> WB.flush_o -> MEM.wb_valid_o
-  // which is not a pipeline hazard but an actual combinational cycle.
-  //
-  // Delaying it is correct, not a patch.  The instruction MEM is presenting is
-  // the one WB is committing -- flushing it would be flushing the trapping
-  // instruction itself, and it leaves this cycle regardless.  What the flush
-  // must kill is everything *younger*: the EX/MEM register (flushed
-  // combinationally, no loop there, since its output to MEM is registered),
-  // and any uncommitted store-buffer entry, which the delayed flush removes a
-  // cycle later -- before any of it can reach architectural state, because
-  // only WB commits and WB sees nothing in that cycle.
+  // registered: MEM.wb_valid -> WB.flush -> MEM is a comb loop
   logic mem_flush_q;
 
   always_ff @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) mem_flush_q <= 1'b0;
     else         mem_flush_q <= wb_flush;
   end
-
-  // The store commit reaches MEM one cycle after WB issues it.
-  //
-  // An AMO allocates its store-buffer entry at the moment it completes, which
-  // is the same cycle WB commits it -- and MEM's commit sweep only visits
-  // entries that already exist, so a commit arriving in the allocation cycle
-  // would be dropped and the store would sit in the buffer for ever.  (With a
-  // completion buffer this could not happen: the commit came from retire, a
-  // cycle after WB had written the entry.)
-  //
-  // Delaying by one cycle is the fix that leaves MEM untouched -- it is the
-  // module with 891k checks behind it, and this is a property of when WB runs,
-  // not of how the store buffer works.  Nothing is at risk in the gap: a store
-  // only reaches here having committed, so no trap can revoke it, and MEM's
-  // flush keeps committed entries regardless.
-  logic             sb_commit_q;
-  logic [TAG_W-1:0] sb_commit_tag_q;
-
-  always_ff @(posedge clk_i or negedge rst_ni) begin
-    if (!rst_ni) begin
-      sb_commit_q     <= 1'b0;
-      sb_commit_tag_q <= '0;
-    end else begin
-      sb_commit_q     <= sb_commit;
-      sb_commit_tag_q <= sb_commit_tag;
-    end
-  end
-
-  // The store buffer matches a committed store to its pending entry by tag.
-  // The oldest in-flight tag is WB's if WB holds something, otherwise MEM's --
-  // which in an in-order pipeline is just "the instruction nearest the end".
-  logic [TAG_W-1:0] oldest_tag;
-  assign oldest_tag = mem_wb_valid ? mem_wb.tag : ex_mem.tag;
 
   s1_mem u_mem (
     .clk_i            (clk_i),
@@ -404,9 +334,7 @@ module s1_core
     .wb_o             (mem_wb),
     .wb_pend_o        (mem_wb_pend),
 
-    .oldest_tag_i     (oldest_tag),
-    .sb_commit_i      (sb_commit_q),
-    .sb_commit_tag_i  (sb_commit_tag_q),
+    .sb_commit_i      (sb_commit),
 
     .chk_addr_o       (chk_addr_o),
     .chk_size_o       (chk_size_o),
@@ -430,9 +358,7 @@ module s1_core
     .store_err_addr_o (store_err_addr_o)
   );
 
-  // The core never fetches through the check port today, so `ex` is tied low.
-  // Closing that gap (docs/modules/s1_core.md) means giving s1_fetch its
-  // own query rather than changing this one.
+  // Instruction fetch does not use the check port.
   assign chk_ex_o = 1'b0;
 
   // ===========================================================================
@@ -445,14 +371,11 @@ module s1_core
     .irq_valid_i          (irq_valid_i),
     .irq_code_i           (irq_code_i),
 
-    .sb_empty_i           (sb_empty),
-
     .rf_wr_o              (rf_wr),
     .csr_commit_o         (csr_commit_o),
     .instret_o            (instret_o),
 
     .sb_commit_o          (sb_commit),
-    .sb_commit_tag_o      (sb_commit_tag),
 
     .flush_o              (wb_flush),
     .flush_cause_o        (wb_flush_cause),
@@ -483,5 +406,25 @@ module s1_core
   end
 
   assign fence_i_o = (wb_flush_cause == FLUSH_FENCE_I);
+
+  // MXIF tie-off (no coprocessor yet).
+  assign x_issue_valid_o    = 1'b0;
+  assign x_issue_instr_o    = '0;
+  assign x_issue_mode_o     = '0;
+  assign x_issue_id_o       = '0;
+  assign x_issue_pc_o       = '0;
+  assign x_issue_rs_o       = '0;
+  assign x_issue_rs_valid_o = '0;
+  assign x_commit_valid_o   = 1'b0;
+  assign x_commit_id_o      = '0;
+  assign x_commit_kill_o    = 1'b0;
+  assign x_result_ready_o   = 1'b0;
+
+  logic unused_mxif;
+  assign unused_mxif = ^{x_issue_ready_i, x_issue_accept_i, x_issue_writeback_i,
+                         x_issue_dualwrite_i, x_issue_loadstore_i, x_norollback_i,
+                         x_norollback_id_i, x_result_valid_i, x_result_id_i,
+                         x_result_rd_i, x_result_data_i, x_result_we_i,
+                         x_result_exc_i, x_result_exccode_i, x_idle_i};
 
 endmodule
