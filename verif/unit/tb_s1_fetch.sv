@@ -1,11 +1,8 @@
-// =============================================================================
 // Copyright 2026 Maktab-e-Digital Systems Lahore.
 // Licensed under the Apache License, Version 2.0, see LICENSE file for details.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Author(s)    : Ayesha Anwar (ayesha.anwaar2005@gmail.com) (Sep,2026)
-// Modified By  :
-//
+// =============================================================================
 // tb_s1_fetch  : unit testbench for s1_fetch                       [WIP -- T-01]
 // Description  :
 // Every delivered instruction is scoreboarded against a reference model that
@@ -20,12 +17,13 @@ module tb_s1_fetch
 ;
 
   `include "verif/common/rvc_golden.svh"
+  `include "verif/common/btfn_golden.svh"
 
   // Expectations derive from these (R-V2).
-  localparam int unsigned     BUF_HW     = 6;            // DUT FETCH_BUF_HW
+  localparam int unsigned     BUF_HW     = 8;            // DUT FETCH_BUF_HW
   localparam int unsigned     WORD_BYTES = ILEN / 8;
   localparam int unsigned     PARCEL     = CLEN / 8;
-  localparam int unsigned     LANES      = XLEN / ILEN;
+  localparam int unsigned     BEAT_BYTES = XLEN / 8;
   localparam logic [XLEN-1:0] BASE       = BOOT_ADDR;
   localparam int unsigned     IMG_BYTES  = 4096;         // random-image window
   localparam int unsigned     WATCHDOG   = 400;          // cycles without progress = hang
@@ -45,6 +43,7 @@ module tb_s1_fetch
   mem_rsp_t        rsp;
   logic            out_valid, out_ready;
   fetch_rsp_t      out;
+  logic [REG_ADDR_W-1:0] nxt_rs1, nxt_rs2;
 
   s1_fetch #(
     .RESET_PC     (BASE),
@@ -65,7 +64,9 @@ module tb_s1_fetch
     .imem_rsp_i              (rsp),
     .fetch_rsp_valid_o       (out_valid),
     .fetch_rsp_ready_i       (out_ready),
-    .fetch_rsp_o             (out)
+    .fetch_rsp_o             (out),
+    .nxt_rs1_addr_o          (nxt_rs1),
+    .nxt_rs2_addr_o          (nxt_rs2)
   );
 
   int unsigned cycle  = 0;
@@ -83,10 +84,10 @@ module tb_s1_fetch
   // Memory image.  Unwritten parcels come from a fixed hash of the address, so
   // the model and the BFM agree wherever the stream wanders.
   logic [CLEN-1:0] img [longint unsigned];   // parcel address -> parcel
-  bit              bad [longint unsigned];   // word address   -> access fault
+  bit              bad [longint unsigned];   // beat address   -> access fault
 
-  function automatic logic [XLEN-1:0] word_of(input logic [XLEN-1:0] a);
-    return a & ~XLEN'(WORD_BYTES - 1);
+  function automatic logic [XLEN-1:0] beat_of(input logic [XLEN-1:0] a);
+    return a & ~XLEN'(BEAT_BYTES - 1);
   endfunction
 
   function automatic logic [CLEN-1:0] mem_hw(input logic [XLEN-1:0] a);
@@ -97,7 +98,7 @@ module tb_s1_fetch
   endfunction
 
   function automatic bit mem_bad(input logic [XLEN-1:0] a);
-    return bad.exists(word_of(a));
+    return bad.exists(beat_of(a));
   endfunction
 
   task automatic put16(input logic [XLEN-1:0] a, input logic [CLEN-1:0] v);
@@ -196,23 +197,25 @@ module tb_s1_fetch
     return BASE + XLEN'(PARCEL) * XLEN'($urandom_range(IMG_BYTES / PARCEL - 1));
   endfunction
 
+  // The request is the whole beat: all byte lanes.
   function automatic logic [XLEN/8-1:0] exp_be(input logic [XLEN-1:0] a);
-    int unsigned lane;
-    lane = int'((a / WORD_BYTES) % LANES);
-    return (XLEN/8)'((1 << WORD_BYTES) - 1) << (lane * WORD_BYTES);
+    return '1;
   endfunction
 
-  // Fetch word on its lane, junk on the others.
   function automatic logic [XLEN-1:0] beat_for(input logic [XLEN-1:0] a);
     logic [XLEN-1:0] b;
-    int unsigned     lane;
-    b    = {$urandom, $urandom};
-    lane = int'((a / WORD_BYTES) % LANES);
-    b[lane*ILEN +: ILEN] = {mem_hw(a + PARCEL), mem_hw(a)};
+    for (int unsigned k = 0; k < XLEN / CLEN; k++)
+      b[k*CLEN +: CLEN] = mem_hw(beat_of(a) + XLEN'(k * PARCEL));
     return b;
   endfunction
 
-  task automatic compare(input fetch_rsp_t got, input fetch_rsp_t exp);
+  task automatic compare(input fetch_rsp_t got_in, input fetch_rsp_t exp_in);
+    fetch_rsp_t got, exp;
+    got = got_in;
+    exp = exp_in;
+    // s1_rvc_expand's output is don't-care for an illegal parcel; the
+    // exception travels in exc/exccode/exctval and instr_raw.
+    if (exp.exc && exp.compressed) begin got.instr = '0; exp.instr = '0; end
     checks++;
     if (got !== exp) begin
       errors++;
@@ -228,6 +231,9 @@ module tb_s1_fetch
     end
   endtask
 
+  logic [REG_ADDR_W-1:0] prev_nxt_rs1, prev_nxt_rs2;
+  bit                    nxt_seen = 1'b0;
+
   // One cycle: drive, probe, check, clock.
   task automatic tick();
     logic       v0, ov0;
@@ -235,6 +241,18 @@ module tb_s1_fetch
     fetch_rsp_t o0, e;
     bit         redirect_now, req_hs, rsp_hs, out_hs, new_req, stale_pending;
     pend_t      p;
+
+    // ---- nxt_rs*_addr_o, sampled last cycle, must name the rs1/rs2 fields of the
+    // instruction the IF/ID register holds now.  A kill leaves it invalid, so
+    // there is nothing to check.
+    if (nxt_seen && out_valid) begin
+      check(out.instr[19:15] === prev_nxt_rs1,
+            $sformatf("nxt_rs1_addr_o %0d, instruction at %h has rs1 %0d",
+                      prev_nxt_rs1, out.pc, out.instr[19:15]));
+      check(out.instr[24:20] === prev_nxt_rs2,
+            $sformatf("nxt_rs2_addr_o %0d, instruction at %h has rs2 %0d",
+                      prev_nxt_rs2, out.pc, out.instr[24:20]));
+    end
 
     // ---- drive
     if (rnd_redirects && !drv_ex && !drv_rt) begin
@@ -291,10 +309,10 @@ module tb_s1_fetch
     if (prev_req_valid && !prev_req_ready)
       check(req_valid && req == prev_req, "imem request withdrawn or changed before accept (R-C10)");
     if (new_req) begin
-      check(req.addr == word_of(req.addr), "imem request address not word aligned");
-      check(!req.we && req.size == 3'($clog2(WORD_BYTES)) && req.id == '0,
+      check(req.addr == beat_of(req.addr), "imem request address not beat aligned");
+      check(!req.we && req.size == 3'($clog2(BEAT_BYTES)) && req.id == '0,
             "imem request we/size/id wrong");
-      check(req.be == exp_be(req.addr), "imem request byte enables do not select the word");
+      check(req.be == exp_be(req.addr), "imem request byte enables are not the whole beat");
       check(req.mode == cur_priv, "imem request mode is not the current privilege");
       if (m_halted && !redirect_now) check(1'b0, "new fetch request issued past a delivered fault");
     end
@@ -355,6 +373,9 @@ module tb_s1_fetch
     prev_out_ready = out_ready;
     prev_out       = out;
     prev_redirect  = redirect_now;
+    prev_nxt_rs1   = nxt_rs1;
+    prev_nxt_rs2   = nxt_rs2;
+    nxt_seen       = 1'b1;
 
     // ---- clock
     clk = 1'b1; #1;
@@ -403,6 +424,7 @@ module tb_s1_fetch
     prev_req_valid = 1'b0; prev_req_ready = 1'b0; prev_out_valid = 1'b0;
     prev_out_ready = 1'b0; prev_redirect = 1'b0; prev_req = '0; prev_out = '0;
     m_pc = BASE; m_halted = 1'b0; last_progress = cycle;
+    nxt_seen = 1'b0;
     // Two-state sim: a reset low from time zero has no negedge; make one.
     rst_n = 1'b1; #1;
     rst_n = 1'b0; #1;
@@ -417,7 +439,7 @@ module tb_s1_fetch
   task automatic test_reset();
     do_reset();
     check(req_valid, "no fetch request out of reset");
-    check(req.addr == word_of(BASE), "first request is not the reset vector");
+    check(req.addr == beat_of(BASE), "first request is not the reset vector");
     check(req.mode == PRIV_M, "first request is not M-mode");
     check(!out_valid, "fetch_rsp_valid_o high out of reset");
   endtask
@@ -437,7 +459,7 @@ module tb_s1_fetch
     count_hs(win, n);
     check(n == win, $sformatf("compressed: %0d of %0d cycles delivered", n, win));
 
-    // every 32-bit instruction straddles two words
+    // every 32-bit instruction is two parcels, half of them across a beat boundary
     put16(BASE + 'h2000, 16'h0001);
     fill_nop32(BASE + 'h2000 + PARCEL, 1024);
     jump_to(BASE + 'h2000 + PARCEL); run(8);
@@ -518,15 +540,15 @@ module tb_s1_fetch
     jump_to(a - 'h8); wait_pc(a, t); run(20);
 
     // straddling 32-bit, second parcel faults: mtval = pc+2
-    a = BASE + 'h300 + PARCEL;
+    a = BASE + 'h300 + BEAT_BYTES - PARCEL;
     put32(a, nop32());
-    bad[word_of(a + PARCEL)] = 1'b1;
+    bad[beat_of(a + PARCEL)] = 1'b1;
     jump_to(a); wait_pc(a, t); run(20);
 
     // straddling 32-bit, first parcel faults: mtval = pc
-    a = BASE + 'h400 + PARCEL;
+    a = BASE + 'h400 + BEAT_BYTES - PARCEL;
     put32(a, nop32());
-    bad[word_of(a)] = 1'b1;
+    bad[beat_of(a)] = 1'b1;
     jump_to(a); wait_pc(a, t); run(20);
 
     // a redirect restarts fetch
@@ -577,7 +599,7 @@ module tb_s1_fetch
     id_ready_pct = 0;
     a0 = n_req_acc;
     run(50);
-    check(n_req_acc - a0 <= BUF_HW / (ILEN / CLEN) + 1,
+    check(n_req_acc - a0 <= BUF_HW / (XLEN / CLEN) + 1,
           $sformatf("%0d requests accepted during a full ID stall", n_req_acc - a0));
     id_ready_pct = 100;
     count_hs(16, n);

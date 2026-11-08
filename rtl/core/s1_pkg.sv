@@ -10,16 +10,10 @@
 // shape belongs in this file.
 //
 // THIS IS THE 5-STAGE CORE.  Classic in-order IF -> ID -> EX -> MEM -> WB,
-// in-order issue AND in-order completion.  There is no completion buffer, no
-// MXIF coprocessor port, and no multi-cycle units hanging off the side of the
-// pipeline: MUL and DIV execute inside EX and stall it, so every instruction
-// leaves EX in program order and WB is the commit point.
-//
-// What that removes, relative to the decoupled design in SPEC 9: cb_entry_t,
-// cb_fwd_t, wb_upd_t, the MXIF channel and the external CSR port.  What
-// replaces the completion-buffer index is `tag` -- a small rotating number
-// that lets the store buffer match a committed store to the instruction that
-// made it.  It orders nothing and nothing waits on it.
+// in-order issue and in-order completion: MUL and DIV execute inside EX and
+// stall it, and WB is the commit point.  The MXIF coprocessor interface (SPEC 9,
+// INTERFACES I1) is kept; with WB as the commit point, offload at retire (R1.1)
+// needs no extra logic.  The completion buffer is not used in this core.
 //
 // Reference: SPEC Part II, INTERFACES.md sections 1 and 2.
 // =============================================================================
@@ -35,13 +29,6 @@ package s1_pkg;
   parameter int unsigned PLEN      = 40;   // physical address width
   parameter int unsigned REG_ADDR_W = 5;
 
-  // In-flight tag.  Not an ordering mechanism: the pipeline is in order.  It
-  // exists so the store buffer can tell which pending store belongs to the
-  // instruction now committing in WB.  Four in-flight stages means it only has
-  // to be unique across the pipeline depth; 3 bits is ample.
-  parameter int unsigned TAG_W     = 3;
-
-  parameter int unsigned PMP_N     = 16;
   parameter int unsigned SB_DEPTH  = 4;    // store buffer entries (SPEC 14)
 
   // Reset vector.  Overridable per config; the boot ROM lives here.
@@ -155,7 +142,7 @@ package s1_pkg;
 
   // ---------------------------------------------------------------------------
   // decoded_op_t -- ID-stage control bundle (SPEC 7.2). Produced only by
-  // s1_decode.sv; consumed by s1_hazard (via s1_id) and s1_ex. Carries no
+  // s1_decode.sv; consumed by s1_id and s1_execute. Carries no
   // register values and no privilege checks -- those belong to s1_regfile.sv
   // and the (external) CSR file respectively.
   // ---------------------------------------------------------------------------
@@ -214,9 +201,9 @@ package s1_pkg;
   } decoded_op_t;
 
   // ---------------------------------------------------------------------------
-  // RVFI's memory group, carried with a completion-buffer entry until retire
-  // drives the trace port (SPEC 28.2).  Masks are relative to `addr`, data
-  // right-justified.
+  // RVFI's memory group, carried down the pipeline until WB drives the trace
+  // port (SPEC 28.2).  Masks are relative to `addr`,
+  // data right-justified.
   // ---------------------------------------------------------------------------
   typedef struct packed {
     logic [XLEN-1:0]       addr;
@@ -264,7 +251,8 @@ package s1_pkg;
     logic       align_natural;  // 1 = misaligned access faults
   } pma_t;
 
-  // Execute stage (rtl/modules/s1_ex.sv).  Contract: docs/modules/s1_ex.md.
+  // ---------------------------------------------------------------------------
+  // Execute stage (rtl/core/s1_execute.sv).
   // ---------------------------------------------------------------------------
 
   // Forwarding source of an EX operand, chosen by the hazard unit in ID.
@@ -274,8 +262,7 @@ package s1_pkg;
   // must read it out of its own EX/MEM register next cycle.  FWD_RF means the
   // value is already known in ID and travels in rs1_val/rs2_val -- whether it
   // came from the register file, from the EX/MEM register, or from MEM's
-  // output in the cycle it completed.  See s1_hazard.sv for why resolving in ID is
-  // the only timing that works.
+  // output in the cycle it completed.  Resolving in ID is the only timing that works.
   typedef enum logic [0:0] {
     FWD_RF, FWD_EXMEM
   } fwd_src_e;
@@ -283,7 +270,6 @@ package s1_pkg;
   // ID/EX register.
   typedef struct packed {
     decoded_op_t           op;
-    logic [TAG_W-1:0]      tag;         // in-flight tag, assigned in ID
     logic [XLEN-1:0]       rs1_val;     // register-file reads
     logic [XLEN-1:0]       rs2_val;
     fwd_src_e              rs1_fwd;
@@ -298,7 +284,6 @@ package s1_pkg;
 
   // EX/MEM register.
   typedef struct packed {
-    logic [TAG_W-1:0]      tag;
     logic [REG_ADDR_W-1:0] rd;
     logic                  rd_we;
     logic [XLEN-1:0]       result;      // ALU, link or old CSR value; loads replace it in MEM
@@ -319,10 +304,8 @@ package s1_pkg;
     logic [5:0]            exccode;
     logic [XLEN-1:0]       exctval;
 
-    // The completion buffer used to hold these for the whole of an
-    // instruction's life (SPEC 9.1).  With no buffer they travel with it, so
-    // that WB -- which is now the commit point -- can drive RVFI, build mtval,
-    // and act on xRET and the fences.
+    // Carried with the instruction so that WB, the commit point, can drive
+    // RVFI, build mtval, and act on xRET and the fences.
     logic [XLEN-1:0]       pc;
     logic [ILEN-1:0]       instr;       // as fetched: 16-bit forms zero-extended
     sys_op_e               sys_op;
@@ -332,25 +315,6 @@ package s1_pkg;
     logic [XLEN-1:0]       rs2_rdata;
   } ex_mem_t;
 
-  // EX -> MUL/DIV dispatch.
-  typedef struct packed {
-    exec_unit_e            unit;        // UNIT_MUL or UNIT_DIV
-    muldiv_op_e            op;
-    logic [XLEN-1:0]       a;
-    logic [XLEN-1:0]       b;
-    logic [TAG_W-1:0]      tag;
-    logic [REG_ADDR_W-1:0] rd;
-  } md_req_t;
-
-  // MUL/DIV -> WB completion, the return leg of md_req_t.  RV64M does not trap,
-  // so there is no exception group; x0 is gated in WB.
-  typedef struct packed {
-    logic [TAG_W-1:0]      tag;
-    logic [REG_ADDR_W-1:0] rd;
-    logic [XLEN-1:0]       result;
-  } md_rsp_t;
-
-  // ---------------------------------------------------------------------------
   // ---------------------------------------------------------------------------
   // MEM-REQ protocol payloads (INTERFACES.md section 2)
   // ---------------------------------------------------------------------------
@@ -386,13 +350,12 @@ package s1_pkg;
   } fetch_rsp_t;
 
   // ---------------------------------------------------------------------------
-  // Memory stage (rtl/modules/s1_mem.sv).  Contract: docs/modules/s1_mem.md.
+  // Memory stage (rtl/core/s1_mem.sv).
   // ---------------------------------------------------------------------------
 
   // MEM/WB: one completion per instruction.  The mem_* group is RVFI's: the
   // access address, byte masks relative to it, and right-justified data.
   typedef struct packed {
-    logic [TAG_W-1:0]      tag;
     logic [REG_ADDR_W-1:0] rd;
     logic                  rd_we;
     logic [XLEN-1:0]       result;      // load / LR / AMO value, SC status, else EX's result
@@ -410,10 +373,8 @@ package s1_pkg;
     logic [XLEN-1:0]       mem_rdata;
     logic [XLEN-1:0]       mem_wdata;
 
-    // The completion buffer used to hold these for the whole of an
-    // instruction's life (SPEC 9.1).  With no buffer they travel with it, so
-    // that WB -- which is now the commit point -- can drive RVFI, build mtval,
-    // and act on xRET and the fences.
+    // Carried with the instruction so that WB, the commit point, can drive
+    // RVFI, build mtval, and act on xRET and the fences.
     logic [XLEN-1:0]       pc;
     logic [ILEN-1:0]       instr;       // as fetched: 16-bit forms zero-extended
     sys_op_e               sys_op;

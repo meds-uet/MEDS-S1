@@ -45,10 +45,10 @@ not define that interface (see *Open questions*). This module proposes:
 | `priv_i` | in | `priv_lvl_e` | effective fetch privilege | copied into every new request; **must change only at the edge that ends a retire-redirect cycle**; drive `PRIV_M` in debug mode |
 | `imem_req_valid_o` | out | 1 | I2 request | never a function of any `ready` input |
 | `imem_req_ready_i` | in | 1 | I2 grant | may depend on `valid` (I2 allows a single-cycle grant) |
-| `imem_req_o` | out | `mem_req_t` | I2 payload | `addr` word-aligned, `we=0`, `size=2` (4 B), `be` selects the word's lane, `mode=priv_i`, `id=0`; **stable while `valid && !ready`** |
+| `imem_req_o` | out | `mem_req_t` | I2 payload | `addr` beat-aligned (8 B), `we=0`, `size=3`, `be` all ones (the whole `XLEN` beat), `mode=priv_i`, `id=0`; **stable while `valid && !ready`** |
 | `imem_rsp_valid_i` | in | 1 | I2 response | only while a request is outstanding; in request order |
 | `imem_rsp_ready_o` | out | 1 | | **constant 1**; space is reserved at issue |
-| `imem_rsp_i` | in | `mem_rsp_t` | I2 response payload | `rdata` byte-lane aligned; `err=1` means access fault; `id` and `errcode` are ignored |
+| `imem_rsp_i` | in | `mem_rsp_t` | I2 response payload | `rdata` is the whole beat; `err=1` means access fault; `id` and `errcode` are ignored |
 | `fetch_rsp_valid_o` | out | 1 | instruction for ID | registered |
 | `fetch_rsp_ready_i` | in | 1 | ID accepts | |
 | `fetch_rsp_o` | out | `fetch_rsp_t` | instruction bundle | registered; fields below |
@@ -69,7 +69,7 @@ not define that interface (see *Open questions*). This module proposes:
 
 - **I2 (`imem_*`):** INTERFACES.md §2 and R-C10. `valid` does not depend on `ready`, and the payload
   is held until accepted. At most one request is outstanding, and a new request may be issued in
-  the cycle its predecessor's response arrives, so a 1-cycle I$ sustains one word per cycle. A
+  the cycle its predecessor's response arrives, so a 1-cycle I$ sustains one beat per cycle. A
   redirect cannot retarget a request that is already presented. That request is completed and its
   response dropped.
 - **`fetch_rsp`:** valid/ready, registered. Once asserted, `valid` and the payload are held until
@@ -87,7 +87,7 @@ not define that interface (see *Open questions*). This module proposes:
 | Sequential stream | every cycle | 0 | 1 instruction/cycle at every alignment |
 
 **Backpressure:** when ID stalls, the realign buffer fills and requests stop. At most
-`FETCH_BUF_HW/2 + 1` requests are accepted after the stall begins. The I$ request path never waits
+`FETCH_BUF_HW/4 + 1` requests are accepted after the stall begins. The I$ request path never waits
 on `fetch_rsp_ready_i`, which keeps ID's hazard logic out of the I$ address timing.
 
 **Reset state:** `fetch_rsp_valid_o = 0`; the first request, to `RESET_PC` in M-mode, is presented
@@ -98,7 +98,7 @@ in the first cycle after reset.
 | Parameter | Default | Legal range | Effect |
 |---|---|---|---|
 | `RESET_PC` | `s1_pkg::BOOT_ADDR` | any parcel-aligned address | first fetch address; a constant, so the reset value is constant (an input-driven async-reset value is not synthesisable cleanly) |
-| `FETCH_BUF_HW` | 6 | ≥ 4 (elaboration error below) | realign-buffer capacity in 16-bit parcels. 4 guarantees progress but halves throughput on word-straddling 32-bit streams; 6 sustains one instruction per cycle at every alignment |
+| `FETCH_BUF_HW` | 8 | ≥ 8 (elaboration error below) | realign-buffer capacity in 16-bit parcels: one 4-parcel beat in the buffer plus one outstanding |
 
 ## Behaviour
 
@@ -106,9 +106,9 @@ in the first cycle after reset.
              ex / retire / BTFN redirect
                         │
    pc_q ──► next_pc ──►─┴─► imem_req (I2) ──► I$ ──► imem_rsp
-                                                        │ 32-bit word, 1 or 2 parcels
+                                                        │ 64-bit beat, 1 to 4 parcels
                                                         ▼
-                         realign buffer  [p0 p1 p2 p3 p4 p5]  (+ this cycle's response = "window")
+                         realign buffer  [p0 p1 p2 p3 p4 p5 p6 p7]  (+ this cycle's response = "window")
                                                         │ head: 1 parcel (C) or 2 (32-bit)
                                                         ▼
                              s1_rvc_expand ──► BTFN check ──► IF/ID register ──► ID
@@ -116,15 +116,15 @@ in the first cycle after reset.
                                         predicted taken: next cycle, pc + imm ──┘
 ```
 
-**Realign buffer.** Responses are split into 16-bit parcels, each tagged with its word's `err`.
+**Realign buffer.** Responses are split into 16-bit parcels, each tagged with its beat's `err`.
 The head instruction is carved from a *window*: the registered buffer with this cycle's response
 appended. Carving from the window rather than from the register is what lets a response reach the
 IF/ID register in the cycle it arrives. Without it the mispredict penalty would be 3. A 32-bit
-instruction straddling two fetch words is not a special case, because it is just two parcels. After
-a redirect to `pc[1] = 1`, the first word's low parcel is dropped at push.
+instruction straddling two beats is not a special case, because it is just two parcels. After
+a redirect into the middle of a beat, the parcels below the target are dropped at push.
 
 **Credit rule.** A request is issued only if
-`parcels buffered + 2·(fresh response pending) + 2 ≤ FETCH_BUF_HW`. Pops are not credited. That is
+`parcels buffered + 4·(fresh response pending) + 4 ≤ FETCH_BUF_HW`. Pops are not credited. That is
 what keeps `fetch_rsp_ready_i` out of the request path, and it is also why the response port can
 be constant-ready.
 
@@ -216,7 +216,7 @@ Mutants, each built from a copy of `s1_fetch.sv` with one line changed:
 | tval of 2nd parcel | second-parcel fault reports `mtval = pc` | scoreboard (`exctval`) |
 | no halt | keeps fetching past a faulting instruction | "no request past a fault" check |
 | no credit | issues without reserving buffer space | throughput check, then scoreboard |
-| lane 0 | always takes `rdata[31:0]` (the first version's bug) | scoreboard |
+| beat parcels | takes the wrong parcels of the beat after a redirect into it | scoreboard |
 | retire combinational | issues in the retire-redirect cycle | scoreboard |
 | valid on ready | `imem_req_valid_o` gated by `imem_req_ready_i` | reset-vector check, then R-C10 probe |
 | no skip | redirect to `pc[1] = 1` keeps the preceding parcel | scoreboard |
@@ -225,17 +225,27 @@ A twelfth mutant, removing the flush gate on the response push, survived. It tur
 equivalent (the flush empties the buffer at the same edge anyway), so the redundant term was
 removed from the RTL.
 
+## Timing
+
+Target: 50 MHz on Kintex-7 (SPEC NFR-1), a 20 ns period. The longest path is I$ `rdata` → parcel
+select by `outst_skip_q` and `buf_cnt_q` → `s1_rvc_expand` → `load` (which also depends on
+`fetch_rsp_ready_i`) → `nxt_rs*_addr_o` → regfile SRAM address. That is roughly a 4:1 parcel mux, the
+expander (a 20-bit compare feeding a case mux), the buffer-position mux and the `load` select, about
+12 to 14 LUT levels. **This is an estimate from the logic depth; it has not been measured.** If a
+synthesis report (R-05) shows it missing 20 ns, the fallback is to register `nxt_rs*_addr_o` and
+accept the register-file read one cycle later, which adds a cycle to the front end.
+
 ## Known limitations
 
 - **One outstanding I2 request** (I2's v1 rule). With an I$ hit latency above one cycle, throughput
-  is one word per hit latency.
+  is one beat per hit latency.
 - **`JALR` always costs a mispredict**, and returns are `JALR`s. A return-address stack is the
   obvious first v2 predictor improvement.
 - **The I$ invalidate for `fence.i` is not routed through this module.** Retire drives the I$
   directly. Correctness needs the I$ to refuse (`ready = 0`) requests until the invalidation is
   done. The registered retire redirect gives it one cycle's head start.
 - `errcode` is ignored; every fetch error is an access fault.
-- Tested only at `XLEN = 64`, `FETCH_BUF_HW = 6`.
+- Tested only at `XLEN = 64`, `FETCH_BUF_HW = 8`.
 
 ## Open questions
 
@@ -248,7 +258,7 @@ removed from the RTL.
    outcomes from EX. If the swappable-predictor promise is to hold "without touching the pipeline",
    the outcome port should exist from v1, just as the MXIF commit channel does (R1.3).
 3. **I2 `errcode` encoding** is undefined. Phase 5 needs at least access-fault vs page-fault.
-4. **I2 byte-lane convention** for a 4-byte request on a 64-bit port is not stated. This module
-   assumes AXI-style lanes (byte *A* on lane *A* mod 8); the I$ and D$ must agree.
+4. **I2 beat requests.** This module requests the whole `XLEN` beat (`size = 3`, `be` all ones), so no
+   lane convention is needed on the I$ side.
 5. **`cb_entry_t` has one `instr` field**, but RVFI needs the raw bits and MXIF needs the expanded
    ones. The completion buffer needs `instr_raw` (or `compressed` plus the parcel) as well.

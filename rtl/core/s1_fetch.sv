@@ -1,11 +1,8 @@
-// =============================================================================
 // Copyright 2026 Maktab-e-Digital Systems Lahore.
 // Licensed under the Apache License, Version 2.0, see LICENSE file for details.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Author(s)    : Ayesha Anwar (ayesha.anwaar2005@gmail.com) (Sep,2026)
-// Modified By  :
-//
+// =============================================================================
 // s1_fetch     : IF stage -- PC generation, BTFN, realign, C expansion  [WIP -- T-01]
 // Description  :
 // Fetches 32-bit words from the I$ over I2 MEM-REQ, realigns 16/32-bit
@@ -19,7 +16,7 @@ module s1_fetch
   import s1_pkg::*;
 #(
   parameter logic [XLEN-1:0] RESET_PC     = BOOT_ADDR,
-  parameter int unsigned     FETCH_BUF_HW = 6      // realign buffer, 16-bit parcels
+  parameter int unsigned     FETCH_BUF_HW = 8      // realign buffer, 16-bit parcels
 ) (
   input  logic            clk_i,
   input  logic            rst_ni,
@@ -52,18 +49,20 @@ module s1_fetch
   output logic [REG_ADDR_W-1:0] nxt_rs2_addr_o
 );
 
-  localparam int unsigned WORD_BYTES = ILEN / 8;
-  localparam int unsigned OFF_W      = $clog2(WORD_BYTES);
-  localparam int unsigned HW_BYTES   = CLEN / 8;
-  localparam int unsigned HW_BIT     = $clog2(HW_BYTES);
-  localparam int unsigned HW_PER_WD  = ILEN / CLEN;
-  localparam int unsigned WORD_LANES = XLEN / ILEN;
-  localparam int unsigned LANE_W     = (WORD_LANES > 1) ? $clog2(WORD_LANES) : 1;
-  localparam int unsigned CNT_W      = $clog2(FETCH_BUF_HW + 1);
+  localparam int unsigned WORD_BYTES  = ILEN / 8;
+  localparam int unsigned BEAT_BYTES  = XLEN / 8;
+  localparam int unsigned BEAT_OFF_W  = $clog2(BEAT_BYTES);
+  localparam int unsigned HW_BYTES    = CLEN / 8;
+  localparam int unsigned HW_BIT      = $clog2(HW_BYTES);
+  localparam int unsigned HW_PER_WD   = ILEN / CLEN;
+  localparam int unsigned HW_PER_BEAT = XLEN / CLEN;
+  localparam int unsigned SKIP_W      = $clog2(HW_PER_BEAT);
+  localparam int unsigned CNT_W       = $clog2(FETCH_BUF_HW + 1);
 
-  // Smaller deadlocks on a word-straddling 32-bit instruction.
-  if (FETCH_BUF_HW < 2 * HW_PER_WD) begin : g_bad_buf
-    $error("s1_fetch: FETCH_BUF_HW=%0d is below the minimum of %0d", FETCH_BUF_HW, 2 * HW_PER_WD);
+  // One beat in the buffer, one outstanding, and room for a straddling 32-bit
+  // instruction's first parcel.
+  if (FETCH_BUF_HW < 2 * HW_PER_BEAT) begin : g_bad_buf
+    $error("s1_fetch: FETCH_BUF_HW=%0d is below the minimum of %0d", FETCH_BUF_HW, 2 * HW_PER_BEAT);
   end
 
   // IALIGN=16: bit 0 of a target is forced to zero rather than trusted.
@@ -99,12 +98,11 @@ module s1_fetch
   logic [XLEN-1:0]   pc_q;               // next fetch address
   logic              hold_q;             // presented, not accepted: payload frozen
   mem_req_t          hold_req_q;
-  logic              hold_skip_q;        // drop the word's low parcel
+  logic [SKIP_W-1:0] hold_skip_q;        // leading parcels of the beat to drop
   logic              hold_stale_q;
   logic              outst_q;            // accepted, response pending
-  logic              outst_skip_q;
+  logic [SKIP_W-1:0] outst_skip_q;
   logic              outst_stale_q;      // response belongs to a flushed stream
-  logic [LANE_W-1:0] outst_lane_q;
   logic              halt_q;             // faulting instruction delivered
 
   logic [CNT_W-1:0]  buf_cnt_q;
@@ -118,18 +116,17 @@ module s1_fetch
     else if (bp_fire_q)      next_pc = bp_target;
   end
 
-  // I2 data is byte-lane aligned: pick the 32-bit lane of the XLEN beat.
-  logic [LANE_W-1:0] next_lane, req_lane;
-  assign next_lane = (WORD_LANES > 1) ? next_pc[OFF_W +: LANE_W]         : '0;
-  assign req_lane  = (WORD_LANES > 1) ? imem_req_o.addr[OFF_W +: LANE_W] : '0;
+  // The whole XLEN beat is requested; the parcels below the target are dropped.
+  logic [SKIP_W-1:0] next_skip;
+  assign next_skip = next_pc[HW_BIT +: SKIP_W];
 
   mem_req_t new_req;
   always_comb begin
     new_req      = '0;
-    new_req.addr = {next_pc[XLEN-1:OFF_W], {OFF_W{1'b0}}};
+    new_req.addr = {next_pc[XLEN-1:BEAT_OFF_W], {BEAT_OFF_W{1'b0}}};
     new_req.we   = 1'b0;
-    new_req.be   = (XLEN/8)'({WORD_BYTES{1'b1}}) << (WORD_BYTES * 32'(next_lane));
-    new_req.size = 3'(OFF_W);
+    new_req.be   = '1;
+    new_req.size = 3'(BEAT_OFF_W);
     new_req.mode = priv_i;
     new_req.id   = '0;
   end
@@ -140,8 +137,8 @@ module s1_fetch
   logic             credit_ok, slot_free, may_issue, req_fire, rsp_fire;
 
   assign credit_need = (CNT_W+2)'(buf_cnt_q)
-                     + ((outst_q && !outst_stale_q) ? (CNT_W+2)'(HW_PER_WD) : '0)
-                     + (CNT_W+2)'(HW_PER_WD);
+                     + ((outst_q && !outst_stale_q) ? (CNT_W+2)'(HW_PER_BEAT) : '0)
+                     + (CNT_W+2)'(HW_PER_BEAT);
   assign credit_ok   = kill_buf || (credit_need <= (CNT_W+2)'(FETCH_BUF_HW));
   assign slot_free   = !outst_q || imem_rsp_valid_i;          // one outstanding
   assign may_issue   = !hold_q && !retire_redirect_valid_i && (!halt_q || kill_buf)
@@ -159,15 +156,14 @@ module s1_fetch
       pc_q          <= RESET_PC;
       hold_q        <= 1'b0;
       hold_req_q    <= '0;
-      hold_skip_q   <= 1'b0;
+      hold_skip_q   <= '0;
       hold_stale_q  <= 1'b0;
       outst_q       <= 1'b0;
-      outst_skip_q  <= 1'b0;
+      outst_skip_q  <= '0;
       outst_stale_q <= 1'b0;
-      outst_lane_q  <= '0;
     end else begin
       if (retire_redirect_valid_i)  pc_q <= retire_pc;
-      else if (may_issue)           pc_q <= new_req.addr + XLEN'(WORD_BYTES);
+      else if (may_issue)           pc_q <= new_req.addr + XLEN'(BEAT_BYTES);
       else if (ex_redirect_valid_i) pc_q <= ex_pc;
       else if (bp_fire_q)           pc_q <= bp_target;
 
@@ -175,7 +171,7 @@ module s1_fetch
       if (may_issue && !imem_req_ready_i) begin
         hold_q       <= 1'b1;
         hold_req_q   <= new_req;
-        hold_skip_q  <= next_pc[HW_BIT];
+        hold_skip_q  <= next_skip;
         hold_stale_q <= 1'b0;
       end else if (hold_q && imem_req_ready_i) begin
         hold_q       <= 1'b0;
@@ -186,9 +182,8 @@ module s1_fetch
 
       if (req_fire) begin
         outst_q       <= 1'b1;
-        outst_skip_q  <= hold_q ? hold_skip_q : next_pc[HW_BIT];
+        outst_skip_q  <= hold_q ? hold_skip_q : next_skip;
         outst_stale_q <= hold_q && (hold_stale_q || kill_buf);
-        outst_lane_q  <= req_lane;
       end else if (rsp_fire) begin
         outst_q       <= 1'b0;
         outst_stale_q <= 1'b0;
@@ -204,29 +199,29 @@ module s1_fetch
   // arrives -- needed for the 2-cycle mispredict penalty.
   // ---------------------------------------------------------------------------
   logic [FETCH_BUF_HW-1:0][CLEN-1:0] buf_hw_q, win_hw;
+  logic [HW_PER_BEAT-1:0][CLEN-1:0]  rsp_hw;
   logic [FETCH_BUF_HW-1:0]           buf_err_q, win_err;
   logic [CNT_W-1:0]                  win_cnt, push_cnt, pop_cnt;
-  logic [ILEN-1:0]                   rsp_word;
   logic                              push;
 
   // No flush gating needed: a flush empties the buffer at this edge anyway.
-  assign rsp_word = imem_rsp_i.rdata[32'(outst_lane_q) * ILEN +: ILEN];
+  assign rsp_hw   = imem_rsp_i.rdata;
   assign push     = rsp_fire && !outst_stale_q;
-  assign push_cnt = !push        ? '0
-                  : outst_skip_q ? CNT_W'(1)
-                  :                CNT_W'(HW_PER_WD);
+  assign push_cnt = push ? CNT_W'(HW_PER_BEAT) - CNT_W'(outst_skip_q) : '0;
   assign win_cnt  = buf_cnt_q + push_cnt;
 
+  // Parcels skip..HW_PER_BEAT-1 of the beat land at buf_cnt_q onwards.
   always_comb begin
     win_hw  = buf_hw_q;
     win_err = buf_err_q;
-    for (int unsigned i = 0; i < FETCH_BUF_HW; i++) begin
-      if (i == 32'(buf_cnt_q)) begin
-        win_hw[i]  = outst_skip_q ? rsp_word[CLEN +: CLEN] : rsp_word[0 +: CLEN];
-        win_err[i] = imem_rsp_i.err;
-      end else if (i == 32'(buf_cnt_q) + 1) begin
-        win_hw[i]  = rsp_word[CLEN +: CLEN];
-        win_err[i] = imem_rsp_i.err;
+    for (int unsigned j = 0; j < HW_PER_BEAT; j++) begin
+      if (j >= 32'(outst_skip_q)) begin
+        for (int unsigned i = 0; i < FETCH_BUF_HW; i++) begin
+          if (i == 32'(buf_cnt_q) + j - 32'(outst_skip_q)) begin
+            win_hw[i]  = rsp_hw[j];
+            win_err[i] = imem_rsp_i.err;
+          end
+        end
       end
     end
   end
