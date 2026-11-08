@@ -102,6 +102,23 @@ package meds_s1_lite_pkg;
     logic         r_valid;
   } lite_rsp_t;
 
+  // Register-file adapter ports. Fields use the bus maximum widths so a
+  // peripheral connects one packed request and response independent of its
+  // ADDR_W/REG_DW parameters; unused upper bits are zero on requests and ignored
+  // on responses.
+  typedef struct packed {
+    lite_addr_t addr;
+    logic       we;
+    logic       re;
+    lite_data_t wdata;
+    lite_strb_t wstrb;
+  } lite_reg_req_t;
+
+  typedef struct packed {
+    lite_data_t rdata;
+    logic       err;
+  } lite_reg_rsp_t;
+
   // Safe idle values.  A peripheral held in reset drives this, never 'x.
   parameter lite_rsp_t LITE_RSP_IDLE = '{
     aw_ready: 1'b0, w_ready: 1'b0, ar_ready: 1'b0,
