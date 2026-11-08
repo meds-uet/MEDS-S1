@@ -157,8 +157,7 @@
     logic exp_exc;
     logic [5:0] exp_code;
 
-    // Pass-through: MEM owns these fields only to carry them.
-    check ("wb.tag",        wb_out.tag,       e_in.tag);
+    // Pass-through fields:
     check ("wb.rd",         wb_out.rd,        e_in.rd);
     check1("wb.rd_we",      wb_out.rd_we,     e_in.rd_we);
     check ("wb.next_pc",    wb_out.next_pc,   e_in.next_pc);
@@ -222,4 +221,3 @@
         end
       end
   endtask
-

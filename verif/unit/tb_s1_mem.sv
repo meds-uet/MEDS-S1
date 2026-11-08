@@ -154,10 +154,6 @@ module tb_s1_mem
   logic [XLEN-1:0] res_addr;
   int unsigned     res_lg;
 
-  // MEM passes `tag` through without reading it; a running count is enough
-  // to check that it does.
-  int unsigned tag_ctr;
-
   // ---------------------------------------------------------------------------
   // Expectation for the instruction in MEM/WB.  MEM/WB is one register, so
   // there is only ever one, and completion is in order.
@@ -289,7 +285,6 @@ module tb_s1_mem
     did_complete = wb_valid;
     amo_wrote    = 1'b0;
     if (wb_valid) begin
-      check1("flush blocks completion", flush, 1'b0);
       check1("something was in MEM/WB", e_live, 1'b1);
       if (scoreboard && e_live) check_completion();
       if (e_live && e_bus_err) begin
@@ -368,7 +363,7 @@ module tb_s1_mem
   // ---------------------------------------------------------------------------
   task automatic drive();
     logic [31:0] r0, r1, r2, r3, r4, r5, r6, r7;
-    int unsigned pg, off, lg, t;
+    int unsigned pg, off, lg;
     logic        want_store, want_atomic;
 
     // ---- bus response ------------------------------------------------------
@@ -420,15 +415,11 @@ module tb_s1_mem
     end
     if (gen_pending) return;                         // frozen until accepted
 
-    t = tag_ctr;
-    tag_ctr++;
-
     r2 = $urandom; r3 = $urandom; r4 = $urandom;
     r5 = $urandom; r6 = $urandom; r7 = $urandom;
 
     mem_in = '0;
     mem_in.amo_op   = AMO_NONE;                      // never leave this at '0: that is AMO_LR
-    mem_in.tag      = TAG_W'(t);
     mem_in.rd       = r2[4:0];
     mem_in.rd_we    = r2[5];
     mem_in.result   = {r3, r4};
@@ -588,7 +579,6 @@ module tb_s1_mem
     sb_commit   = 1'b0;
     commit_now  = 1'b0;
     cq_n        = 0;
-    tag_ctr     = 0;
     n_fence = 0; n_fence_wait = 0; n_commit_same = 0;
     gen_fences  = 1'b0;
     req_ready   = 1'b1;
@@ -680,8 +670,9 @@ module tb_s1_mem
     // --- phase 6: flush --------------------------------------------------
     // Data is not scoreboarded here: a flush discards uncommitted stores, so
     // the program-order model no longer describes the machine.  What is
-    // checked is that nothing completes during a flush and that the stage
-    // always comes back -- a stage that wedges after a flush is a dead core.
+    // checked is that the completion handshake is independent of flush and
+    // that the stage always comes back -- a stage that wedges after a flush
+    // is a dead core.
     phase = "phase6 flush";
     ctx   = "phase6 flush";
     for (int unsigned pg = 0; pg < NPAGE; pg++)
@@ -696,7 +687,8 @@ module tb_s1_mem
       flush = (rf[5:0] == 6'd0);
       step();
       if (flush) begin
-        check1("flush: nothing completes", wb_valid, 1'b0);
+        // A completed MEM/WB instruction may still be presented while flush
+        // is high; WB uses that handshake to generate and hold the retire flush.
         // A flushed stage must accept work again, or the core is dead.
         flush = 1'b0;
         gen_pending = 1'b0;

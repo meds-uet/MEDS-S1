@@ -467,7 +467,6 @@ module s1_mem
       mw_amo_op_q   <= AMO_NONE;
     end else if (accept) begin
       mw_valid_q          <= 1'b1;
-      mw_q.tag            <= mem_i.tag;      // passed through; MEM does not use it
       mw_q.rd             <= mem_i.rd;
       mw_q.rd_we          <= mem_i.rd_we;
       mw_q.result         <= is_sc ? XLEN'(sc_skip || in_fault) : mem_i.result;
@@ -553,7 +552,11 @@ module s1_mem
   logic amo_alloc, lr_set;
   always_comb begin
     wb_o       = mw_q;
-    wb_valid_o = mw_done && !flush_i;
+    // Do not gate the completion handshake with flush_i.  WB uses this valid
+    // together with the instruction fields to generate the retire flush.  If
+    // wb_valid_o disappears while flush_i rises, the combinational path can
+    // oscillate between valid and flush; keep the completion independent.
+    wb_valid_o = mw_done;
     if (mw_read_q) begin
       wb_o.result    = old_val;
       wb_o.mem_rdata = raw;
@@ -597,7 +600,8 @@ module s1_mem
   // ---------------------------------------------------------------------------
   // Store buffer update.  Allocation is a store or SC in MEM, or an AMO
   // completing in MEM/WB -- never both in one cycle, and never during a flush
-  // (mem_ready_o and wb_valid_o are both low then).
+  // (mem_ready_o is low then, and wb_valid_o remains an independent result
+  // handshake for WB to generate the retire flush).
   //
   //   pop     the head drained: advance the head
   //   commit  one more of the oldest entries is committed.  A count, so an

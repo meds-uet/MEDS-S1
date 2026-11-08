@@ -27,7 +27,7 @@ register and produces one `mem_wb_t` per instruction.
 | `priv_i` | in | `priv_lvl_e` | effective data privilege | `mstatus.MPRV` already applied |
 | `mem_valid_i` / `mem_ready_o` | in / out | 1 | EX/MEM handshake | EX holds `mem_i` until `ready` (R-C10); `ready` is low during `flush_i` and never depends on `dmem_req_ready_i` |
 | `mem_i` | in | `ex_mem_t` | EX/MEM register | |
-| `wb_valid_o`, `wb_o` | out | 1, `mem_wb_t` | MEM/WB | one per instruction; **no ready** — WB commits whatever it is shown (see *Fences*) |
+| `wb_valid_o`, `wb_o` | out | 1, `mem_wb_t` | MEM/WB | one per instruction; **no ready** — WB commits whatever it is shown (see *Fences*). Completion is independent of `flush_i` so WB can generate a stable retire flush from `wb_valid_i` |
 | `wb_pend_o` | out | 1 | MEM/WB holds something not finished: a read the bus still owes, or a FENCE waiting for the store buffer | the hazard unit and CSR serialisation need this — without it a load in flight is invisible to them whenever memory latency exceeds one cycle |
 | `sb_commit_i` | in | 1 | WB committed a store | at most one per cycle, in program order; commits the oldest uncommitted entry. Only for an instruction shown on `wb_o` with `sb_alloc` set, and never while `flush_i` is high. May arrive in the same cycle the entry is allocated (an AMO completing), so **no delay is needed** in `s1_core` |
 | `chk_*_o` | out | — | the access in MEM, as a query | **answered combinationally in the same cycle** |
@@ -176,8 +176,8 @@ Two bugs that testing found and this version fixes:
 so it proves what MEM does with a checker's answer, not that the checkers are right — PMA belongs to
 the generated decoder and PMP to R-02's checker, each with its own testbench. Zicbom is untested
 because the module does not implement it. Under flush, the program-order model stops describing the
-machine (a flush discards uncommitted stores), so the flush phase checks liveness, "nothing completes
-during a flush", and a third memory model instead: `cmem[]`, every store WB committed, applied in
+machine (a flush discards uncommitted stores), so the flush phase checks liveness, completion-handshake
+independence from `flush_i`, and a third memory model instead: `cmem[]`, every store WB committed, applied in
 commit order. After the phase drains, `phys[]` must equal it byte for byte, which proves a flush
 keeps every committed store and nothing else. Loads are not scoreboarded in that phase.
 
