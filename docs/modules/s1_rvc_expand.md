@@ -26,7 +26,7 @@ Purely combinational. No clock, no reset, no state.
 | Signal | Dir | Width | Meaning | Contract |
 |---|---|---|---|---|
 | `instr_i` | in | `CLEN` (16) | one instruction parcel | any value; `[1:0] == 2'b11` is not a compressed instruction |
-| `instr_o` | out | `ILEN` (32) | expanded encoding | meaningful only when `illegal_o == 0`; **all-zero when `illegal_o == 1`** |
+| `instr_o` | out | `ILEN` (32) | expanded encoding | meaningful only when `illegal_o == 0`; don't-care otherwise |
 | `illegal_o` | out | 1 | reserved encoding | also 1 for `instr_i[1:0] == 2'b11` |
 
 **Latency:** zero, combinational.

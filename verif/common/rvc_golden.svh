@@ -1,12 +1,9 @@
-// =============================================================================
 // Copyright 2026 Maktab-e-Digital Systems Lahore.
 // Licensed under the Apache License, Version 2.0, see LICENSE file for details.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Author(s)    : Ayesha Anwar (ayesha.anwaar2005@gmail.com) (Sep,2026)
-// Modified By  :
-//
-// rvc_golden.svh : reference model of RV64C expansion and BTFN    [COMPLETE]
+// =============================================================================
+// rvc_golden.svh : reference model of RV64C expansion    [COMPLETE]
 // Description  :
 // Testbench-only, `include inside a module.  Written from the ISA manual in a
 // different style from the RTL (VERIFICATION_GUIDE.md 3.2).
@@ -217,18 +214,4 @@ function automatic logic [32:0] rvc_golden(input logic [15:0] c);
   endcase
 
   return {ill, ill ? 32'h0 : e};
-endfunction
-
-// BTFN on an expanded instruction: {taken, offset}.  JAL always taken, JALR never.
-function automatic logic [64:0] btfn_golden(input logic [31:0] i);
-  longint off;
-  if (i[6:0] == 7'h63) begin
-    off = longint'($signed({i[31], i[7], i[30:25], i[11:8], 1'b0}));
-    return {off < 0, off};
-  end
-  if (i[6:0] == 7'h6F) begin
-    off = longint'($signed({i[31], i[19:12], i[20], i[30:21], 1'b0}));
-    return {1'b1, off};
-  end
-  return {1'b0, 64'h0};
 endfunction

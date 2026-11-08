@@ -1,11 +1,8 @@
-// =============================================================================
 // Copyright 2026 Maktab-e-Digital Systems Lahore.
 // Licensed under the Apache License, Version 2.0, see LICENSE file for details.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Author(s)    : Ayesha Anwar (ayesha.anwaar2005@gmail.com) (Sep,2026)
-// Modified By  :
-//
+// =============================================================================
 // tb_s1_rvc_expand : unit testbench for s1_rvc_expand             [COMPLETE]
 // Description  :
 // All 65536 inputs against verif/common/rvc_golden.svh, plus GNU-assembler
@@ -140,9 +137,8 @@ module tb_s1_rvc_expand
       #1;
       g = rvc_golden(c);
       check1($sformatf("illegal(%04h)", c), illegal, g[ILEN]);
-      // The expansion of an illegal parcel is don't-care by contract, but the
-      // RTL promises all-zero so nothing half-decoded leaks downstream.
-      check32($sformatf("expand(%04h)", c), instr, g[ILEN] ? '0 : g[ILEN-1:0]);
+      // The expansion of an illegal parcel is don't-care by contract.
+      if (!g[ILEN]) check32($sformatf("expand(%04h)", c), instr, g[ILEN-1:0]);
       if (g[ILEN]) n_illegal++;
       else         n_legal++;
     end

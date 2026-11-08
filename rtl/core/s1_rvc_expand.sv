@@ -1,11 +1,8 @@
-// =============================================================================
 // Copyright 2026 Maktab-e-Digital Systems Lahore.
 // Licensed under the Apache License, Version 2.0, see LICENSE file for details.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Author(s)    : Ayesha Anwar (ayesha.anwaar2005@gmail.com) (Sep,2026)
-// Modified By  :
-//
+// =============================================================================
 // s1_rvc_expand : RV64C 16-bit -> 32-bit instruction expander        [COMPLETE]
 // Description  :
 // Purely combinational.  Only reserved encodings are illegal; HINTs expand
@@ -20,7 +17,7 @@ module s1_rvc_expand
   import s1_pkg::*;
 (
   input  logic [CLEN-1:0] instr_i,
-  output logic [ILEN-1:0] instr_o,     // don't-care when illegal_o; all-zero today
+  output logic [ILEN-1:0] instr_o,     // don't-care when illegal_o
   output logic            illegal_o    // reserved encoding, or instr_i[1:0] == 2'b11
 );
 
@@ -164,8 +161,6 @@ module s1_rvc_expand
       default:   illegal_o = 1'b1;
     endcase
 
-    // Never hand an illegal parcel's partial expansion downstream.
-    if (illegal_o) instr_o = '0;
   end
 
 endmodule

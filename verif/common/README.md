@@ -10,8 +10,9 @@ Anything synthesisable.
 If two testbenches need it, it belongs here.
 
 ## Contents
-- `rvc_golden.svh`: reference model for RV64C expansion and static BTFN, written from the ISA
-  manual independently of the RTL. Used by `tb_s1_rvc_expand` and `tb_s1_fetch`.
+- `rvc_golden.svh`: reference model for RV64C expansion, written from the ISA manual
+  independently of the RTL. Used by `tb_s1_rvc_expand`.
+- `btfn_golden.svh`: reference model for static BTFN prediction.
 
 ## Catalogue projects that land here
 shared
