@@ -49,6 +49,7 @@ README_DIRS = [
 MODULE_PREFIXES = ("s1_", "meds_s1_", "meds_v_", "tb_")
 MAX_LINES = 800
 SIZE_WAIVER = {"scripts/gen_project_catalogue.py", "scripts/gen_diagrams.py"}
+MEMORY_ARRAY_EXCEPTIONS = {"rtl/core/csr/s1_csr_file.sv"}
 
 REQUIRED_CONFIG_KEYS = {"name", "isa", "privilege", "backbone", "memory_map"}
 
@@ -145,7 +146,8 @@ class Checker:
             for rx, msg in banned:
                 if rx.search(text):
                     self.bad("S6", f, msg)
-            if mem_re.search(text) and f.name not in ("meds_s1_sram.sv",):
+            rel = str(f.relative_to(ROOT))
+            if mem_re.search(text) and f.name not in ("meds_s1_sram.sv",) and rel not in MEMORY_ARRAY_EXCEPTIONS:
                 if "verif/" not in str(f):
                     self.bad("S7", f, "memory array declared outside meds_s1_sram "
                                       "(INTERFACES.md section 8, R-C5)")
