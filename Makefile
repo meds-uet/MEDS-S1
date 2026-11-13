@@ -6,6 +6,7 @@
 #   make help                 what you can do
 #   make check-tools          what you are missing
 #   make check                repository conventions   (fast, run before every push)
+#   make csr-gen              regenerate rtl/generated/s1_csr_pkg.sv
 #   make lint                 lint + elaborate
 #   make test-unit            unit testbenches
 #   make ci                   everything the PR gate runs
@@ -44,6 +45,7 @@ help:
 	@echo
 	@echo "  Everyday"
 	@echo "    check          repository conventions (structure + docs gates)"
+	@echo "    csr-gen        regenerate the CSR package from core_csr.yaml"
 	@echo "    lint           lint and elaborate CONFIG=$(CONFIG)"
 	@echo "    test-unit      run unit testbenches      [TB=<name> for one]"
 	@echo "    ci             everything the PR gate runs"
@@ -99,8 +101,8 @@ check-tools:
 # =============================================================================
 # Conventions and lint -- the PR gate
 # =============================================================================
-.PHONY: check check-structure check-docs check-projects
-check: check-structure check-docs check-projects
+.PHONY: check check-structure check-docs check-projects check-csr-gen
+check: check-structure check-docs check-projects check-csr-gen
 
 check-projects:
 	@$(PY) $(SCRIPTS)/gen_projects_index.py --check
@@ -110,6 +112,14 @@ check-structure:
 
 check-docs:
 	@$(PY) $(SCRIPTS)/check_docs.py
+
+# The checked-in CSR package must match a fresh run of its generator.
+check-csr-gen:
+	@$(PY) gen/s1_csr_gen.py --check
+
+.PHONY: csr-gen
+csr-gen:
+	@$(PY) gen/s1_csr_gen.py
 
 .PHONY: lint
 lint: $(CFG_FILE)
